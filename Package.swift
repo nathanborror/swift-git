@@ -10,10 +10,29 @@ let package = Package(
         .macOS(.v14),
     ],
     products: [
-        .library(name: "Git", targets: ["CGit2", "Git"])
+        .library(name: "Git", targets: ["Git", "CGit2", "GitInit"])
     ],
     targets: [
-        .binaryTarget(name: "CGit2", path: "CGit2.xcframework"),
-        .target(name: "Git", linkerSettings: [.linkedLibrary("z"), .linkedLibrary("iconv")]),
+        .target(
+            name: "Git",
+            dependencies: ["GitInit"],
+            linkerSettings: [
+                .linkedLibrary("z"),
+                .linkedLibrary("iconv"),
+            ]
+        ),
+        .target(
+            name: "GitInit",
+            dependencies: ["CGit2"],
+            publicHeadersPath: "include"
+        ),
+        .binaryTarget(
+            name: "CGit2",
+            path: "CGit2.xcframework"
+        ),
+        .testTarget(
+            name: "GitTests",
+            dependencies: ["Git"]
+        ),
     ]
 )

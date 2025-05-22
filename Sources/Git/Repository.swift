@@ -605,8 +605,7 @@ public final class Repository {
     ///   - checkoutStrategy: The checkout strategy.
     /// - Returns: An `AsyncThrowingStream` that emits ``CheckoutProgress`` structs reporting on the progress of checkout. Checkout is complete when the stream terminates.
     public func checkoutProgress(
-        referenceShorthand: String,
-        checkoutStrategy: git_checkout_strategy_t = GIT_CHECKOUT_SAFE
+        referenceShorthand: String, checkoutStrategy: git_checkout_strategy_t = GIT_CHECKOUT_SAFE
     ) -> AsyncThrowingStream<CheckoutProgress, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -657,49 +656,27 @@ public final class Repository {
                         )
                     }
 
-                    var targetRefname = git_reference_name(referencePointer)
+                    let targetRefname = git_reference_name(referencePointer)
+                    print("Initial targetRefname: \(targetRefname != nil ? String(cString: targetRefname!) : "nil")")
+
                     if git_reference_is_remote(referencePointer) != 0 {
-                        do {
-                            let branchPointer = try GitError.checkAndReturn(
-                                apiName: "git_branch_create_from_annotated",
-                                closure: { pointer in
-                                    git_branch_create_from_annotated(
-                                        &pointer,
-                                        repositoryPointer,
-                                        referenceName,
-                                        annotatedCommit,
-                                        0
-                                    )
-                                }
-                            )
-                            defer {
-                                git_reference_free(branchPointer)
+                        print("Reference is remote, setting detached HEAD")
+
+                        try GitError.check(
+                           apiName: "git_repository_set_head_detached_from_annotated",
+                           closure: {
+                               git_repository_set_head_detached_from_annotated(repositoryPointer, annotatedCommit)
+                           }
+                       )
+                    } else {
+                        print("Setting HEAD to: \(String(cString: targetRefname!))")
+                        try GitError.check(
+                            apiName: "git_repository_set_head",
+                            closure: {
+                                git_repository_set_head(repositoryPointer, targetRefname)
                             }
-                            targetRefname = git_reference_name(branchPointer)
-                        } catch let error as GitError {
-                            guard error.errorCode == GIT_EEXISTS.rawValue else {
-                                throw error
-                            }
-                            let branchPointer = try GitError.checkAndReturn(
-                                apiName: "git_branch_create_from_annotated",
-                                closure: { pointer in
-                                    git_branch_lookup(
-                                        &pointer, repositoryPointer, referenceName, GIT_BRANCH_LOCAL
-                                    )
-                                }
-                            )
-                            defer {
-                                git_reference_free(branchPointer)
-                            }
-                            targetRefname = git_reference_name(branchPointer)
-                        }
+                        )
                     }
-                    try GitError.check(
-                        apiName: "git_repository_set_head",
-                        closure: {
-                            git_repository_set_head(repositoryPointer, targetRefname)
-                        }
-                    )
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
