@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 struct CloneOptions {
     var fetchOptions: FetchOptions?

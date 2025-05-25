@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// Contains the properties of a `git_tree_entry`
 public struct TreeEntry: Hashable {

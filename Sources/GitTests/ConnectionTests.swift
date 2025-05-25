@@ -8,7 +8,7 @@ import Testing
 struct ConectionTests {
 
     let settings = GitConnectionSettings(
-        remoteURLString: "https://github.com/bdewey/AsyncSwiftGit",
+        remote: .init(string:"https://github.com/bdewey/AsyncSwiftGit"),
         username: "bdewey@gmail.com",
         email: "",
         password: "p@ssw0rd",

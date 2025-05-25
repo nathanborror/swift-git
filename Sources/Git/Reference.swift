@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// In-memory representation of a reference.
 public final class Reference {
@@ -62,7 +62,7 @@ public final class Reference {
                 )
                 return Reference(pointer: upstreamPointer)
             } catch let error as GitError {
-                if error.errorCode == GIT_ENOTFOUND.rawValue {
+                if error.code == GIT_ENOTFOUND.rawValue {
                     return nil
                 } else {
                     throw error

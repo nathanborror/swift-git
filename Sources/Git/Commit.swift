@@ -1,7 +1,6 @@
-import CGit2
 import Foundation
+import CGit2
 
-/// A `git` commit.
 public final class Commit {
     private var commit: OpaquePointer?
 

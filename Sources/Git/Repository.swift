@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 import OSLog
 
 private let logger = Logger(subsystem: "Repository", category: "Git")
@@ -216,7 +216,7 @@ public final class Repository {
                 return nil
             }
         } catch let gitError as GitError {
-            if gitError.errorCode == GIT_ENOTFOUND.rawValue {
+            if gitError.code == GIT_ENOTFOUND.rawValue {
                 return nil
             } else {
                 throw gitError
@@ -336,7 +336,7 @@ public final class Repository {
             )
             return ObjectID(oid)
         } catch let error as GitError {
-            if error.errorCode == GIT_ENOTFOUND.rawValue {
+            if error.code == GIT_ENOTFOUND.rawValue {
                 return nil
             } else {
                 throw error
@@ -369,7 +369,7 @@ public final class Repository {
         if result == GIT_ITEROVER.rawValue {
             return branches
         } else {
-            throw GitError(errorCode: result, apiName: "git_branch_next")
+            throw GitError(code: result, apiName: "git_branch_next")
         }
     }
 
@@ -401,7 +401,7 @@ public final class Repository {
             git_reference_free(branchPointer)
             return true
         } catch let error as GitError {
-            if error.errorCode == GIT_ENOTFOUND.rawValue {
+            if error.code == GIT_ENOTFOUND.rawValue {
                 return false
             } else {
                 throw error
@@ -445,7 +445,7 @@ public final class Repository {
             )
             return Reference(pointer: referencePointer)
         } catch let error as GitError {
-            if error.errorCode == GIT_ENOTFOUND.rawValue {
+            if error.code == GIT_ENOTFOUND.rawValue {
                 return nil
             }
             throw error
@@ -464,7 +464,7 @@ public final class Repository {
                 }
             )
         } catch let error as GitError {
-            if error.errorCode == GIT_ENOTFOUND.rawValue {
+            if error.code == GIT_ENOTFOUND.rawValue {
                 return nil
             }
             throw error
@@ -584,7 +584,7 @@ public final class Repository {
                         let defaultBranch = String(cString: buffer.ptr)
                         continuation.yield(.completed(defaultBranch))
                     } catch let error as GitError {
-                        if error.errorCode == GIT_ENOTFOUND.rawValue {
+                        if error.code == GIT_ENOTFOUND.rawValue {
                             continuation.yield(.completed(nil))
                         } else {
                             throw error
@@ -783,7 +783,7 @@ public final class Repository {
             // Normal merge
             guard !mergePreference.contains(GIT_MERGE_PREFERENCE_FASTFORWARD_ONLY) else {
                 throw GitError(
-                    errorCode: Int32(GIT_ERROR_INTERNAL.rawValue),
+                    code: Int32(GIT_ERROR_INTERNAL.rawValue),
                     apiName: "git_merge",
                     customMessage: "Fast-forward is preferred, but only a merge is possible"
                 )
@@ -835,7 +835,7 @@ public final class Repository {
             // Assume our object is a commit
             return ObjectID(git_commit_id(commitPointer))
         } catch let error as GitError {
-            if error.errorCode == GIT_ENOTFOUND.rawValue {
+            if error.code == GIT_ENOTFOUND.rawValue {
                 return nil
             } else {
                 throw error
@@ -928,7 +928,7 @@ public final class Repository {
         }
         guard let headReference = try head else {
             // TODO: Support merging into an unborn branch
-            throw GitError(errorCode: -9, apiName: "git_repository_head")
+            throw GitError(code: -9, apiName: "git_repository_head")
         }
         let headCommit = try GitError.checkAndReturn(
             apiName: "git_reference_peel",
@@ -975,8 +975,8 @@ public final class Repository {
                     &pointer,
                     repositoryPointer,
                     git_reference_name(headReference.referencePointer),
-                    signature.signaturePointer,
-                    signature.signaturePointer,
+                    signature.signature,
+                    signature.signature,
                     nil,
                     "Merge \(revspec)",
                     treePointer,
@@ -1217,7 +1217,7 @@ public final class Repository {
                 )
                 return Reference(pointer: reference)
             } catch let error as GitError {
-                if error.errorCode == GIT_EUNBORNBRANCH.rawValue {
+                if error.code == GIT_EUNBORNBRANCH.rawValue {
                     return nil
                 }
                 throw error
@@ -1428,8 +1428,8 @@ public final class Repository {
                     &commitOID,
                     repositoryPointer,
                     "HEAD",
-                    signature.signaturePointer,
-                    signature.signaturePointer,
+                    signature.signature,
+                    signature.signature,
                     nil,
                     message,
                     tree.treePointer,
@@ -1545,7 +1545,7 @@ public final class Repository {
             walkResult = git_revwalk_next(&oid, revwalkPointer)
         }
         if walkResult != GIT_ITEROVER.rawValue, !stop {
-            throw GitError(errorCode: walkResult, apiName: "git_revwalk_next")
+            throw GitError(code: walkResult, apiName: "git_revwalk_next")
         }
     }
 
@@ -1597,7 +1597,7 @@ public final class Repository {
         case 0:
             return false
         default:
-            throw GitError(errorCode: isReachable, apiName: "git_graph_reachable_from_any")
+            throw GitError(code: isReachable, apiName: "git_graph_reachable_from_any")
         }
     }
 

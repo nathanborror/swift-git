@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// A snapshot of the contents of a single directory stored in a ``Repository``.
 ///

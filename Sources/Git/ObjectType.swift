@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// Mirrors `git_object_t` to be a little more swift-y
 public enum ObjectType: Int32, Sendable {

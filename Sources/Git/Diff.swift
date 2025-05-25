@@ -1,21 +1,19 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// The cumulative list of differences between two snapshots of a repository (possibly filtered by a set of file name patterns).
 public final class Diff {
-    init(_ diffPointer: OpaquePointer) {
-        self.diffPointer = diffPointer
-        self.deltaCount = git_diff_num_deltas(diffPointer)
+    private let diff: OpaquePointer
+    private let deltaCount: Int // The number of ``Delta`` structs contained in this diff
+
+    init(_ diff: OpaquePointer) {
+        self.diff = diff
+        self.deltaCount = git_diff_num_deltas(diff)
     }
 
     deinit {
-        git_diff_free(diffPointer)
+        git_diff_free(diff)
     }
-
-    let diffPointer: OpaquePointer
-
-    /// The number of ``Delta`` structs contained in this diff.
-    let deltaCount: Int
 
     /// A description of changes to a single entry between two snapshots of a repository.
     ///
@@ -35,39 +33,45 @@ public final class Diff {
         }
     }
 
-    public enum Status: UInt32 {
-        /** no changes */
+    public enum Status: UInt32, CustomStringConvertible {
         case unmodified = 0
-
-        /** entry does not exist in old version */
         case added = 1
-
-        /** entry does not exist in new version */
         case deleted = 2
-
-        /** entry content changed between old and new */
         case modified = 3
-
-        /** entry was renamed between old and new */
         case renamed = 4
-
-        /** entry was copied from another old entry */
         case copied = 5
-
-        /** entry is ignored item in workdir */
         case ignored = 6
-
-        /** entry is untracked item in workdir */
         case untracked = 7
-
-        /** type of entry changed between old and new */
         case typechange = 8
-
-        /** entry is unreadable */
         case unreadable = 9
-
-        /** entry in the index is conflicted */
         case conflicted = 10
+
+        public var description: String {
+            switch self {
+            case .unmodified:
+                "no changes"
+            case .added:
+                "entry does not exist in old version"
+            case .deleted:
+                "entry does not exist in new version"
+            case .modified:
+                "entry content changed between old and new"
+            case .renamed:
+                "entry was renamed between old and new"
+            case .copied:
+                "entry was copied from another old entry"
+            case .ignored:
+                "entry is ignored item in workdir"
+            case .untracked:
+                "entry is untracked item in workdir"
+            case .typechange:
+                "type of entry changed between old and new"
+            case .unreadable:
+                "entry is unreadable"
+            case .conflicted:
+                "entry in the index is conflicted"
+            }
+        }
     }
 
     /// Flag values for a ``Delta`` and a ``File``.
@@ -80,16 +84,16 @@ public final class Diff {
             self.rawValue = rawValue
         }
 
-        /** file(s) treated as binary data */
+        /// file(s) treated as binary data
         public static let binary = Flags(rawValue: 1 << 0)
 
-        /** file(s) treated as text data */
+        /// file(s) treated as text data
         public static let notBinary = Flags(rawValue: 1 << 1)
 
-        /** `id` value is known correct */
+        /// `id` value is known correct
         public static let validId = Flags(rawValue: 1 << 2)
 
-        /** file exists at this side of the delta */
+        /// file exists at this side of the delta
         public static let exists = Flags(rawValue: 1 << 3)
     }
 
@@ -128,6 +132,6 @@ extension Diff: RandomAccessCollection {
     }
 
     public subscript(position: Int) -> Delta {
-        Delta(git_diff_get_delta(diffPointer, position)!.pointee)
+        Delta(git_diff_get_delta(diff, position)!.pointee)
     }
 }

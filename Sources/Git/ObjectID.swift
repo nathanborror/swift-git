@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// Make a `git_oid` more Swifty
 public struct ObjectID: CustomStringConvertible, Hashable, Sendable {

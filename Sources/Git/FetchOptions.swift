@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// A structure to report on fetching progress.
 public struct FetchProgress: Equatable, Sendable {

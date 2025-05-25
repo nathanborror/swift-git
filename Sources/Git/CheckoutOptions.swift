@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 // public typealias ProgressCallback = (String, Int, Int) -> Void
 

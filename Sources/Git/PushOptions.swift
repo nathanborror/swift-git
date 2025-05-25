@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 import OSLog
 
 private let logger = Logger(subsystem: "Push", category: "Git")

@@ -1,8 +1,8 @@
-import CryptoKit
 import Foundation
+import CryptoKit
 
 /// Serialization container for ``GitConnectionSettings``
-public enum SerializedGitConnectionSettings: Codable, Sendable {
+public enum GitConnectionSettingsSerialized: Codable, Sendable {
     case plaintext(settings: GitConnectionSettings)
     case passwordProtected(data: Data)
 
@@ -44,8 +44,8 @@ public enum SerializedGitConnectionSettings: Codable, Sendable {
 extension GitConnectionSettings {
     /// Serialize these settings.
     /// - Parameter password: If non-nil, the receiver will be serialized in "pasword-protected" form, which will include the connection password. If nil, the receiver will be in "plain-text" form and the password will be removed.
-    /// - Returns: A ``SerializedGitConnectionSettings`` that contains the serialized form of the receiver.
-    public func serialize(password: String? = nil) throws -> SerializedGitConnectionSettings {
+    /// - Returns: A ``GitConnectionSettingsSerialized`` that contains the serialized form of the receiver.
+    public func serialize(password: String? = nil) throws -> GitConnectionSettingsSerialized {
         guard let password else {
             var settingsCopy = self
             settingsCopy.password = ""

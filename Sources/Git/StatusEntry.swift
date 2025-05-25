@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// A status entry, providing the differences between the file as it exists in HEAD and the index, and providing the differences between the index and the working directory.
 public struct StatusEntry: Hashable, Sendable {

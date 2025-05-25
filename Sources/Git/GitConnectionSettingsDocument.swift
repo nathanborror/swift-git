@@ -1,19 +1,18 @@
-import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    /// A `UTType` for a document containing a ``SerializedGitConnectionSettings`` struct.
-    public static let gitConnectionSettings = UTType(exportedAs: "org.brians-brain.GitConnectionSettings")
+    /// A `UTType` for a document containing a ``GitConnectionSettingsSerialized`` struct.
+    public static let gitConnectionSettings = UTType(exportedAs: "com.git-scm.GitConnectionSettings")
 }
 
-/// A `FileDocument` for reading and writing ``SerializedGitConnectionSettings`` structs.
+/// A `FileDocument` for reading and writing ``GitConnectionSettingsSerialized`` structs.
 public struct GitConnectionSettingsDocument: FileDocument {
-    public init(settings: SerializedGitConnectionSettings = .plaintext(settings: GitConnectionSettings())) {
+    public init(settings: GitConnectionSettingsSerialized = .plaintext(settings: GitConnectionSettings())) {
         self.settings = settings
     }
 
-    public var settings: SerializedGitConnectionSettings
+    public var settings: GitConnectionSettingsSerialized
 
     public static var readableContentTypes: [UTType] = [.gitConnectionSettings]
 
@@ -24,7 +23,7 @@ public struct GitConnectionSettingsDocument: FileDocument {
         else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        self.settings = try JSONDecoder().decode(SerializedGitConnectionSettings.self, from: data)
+        self.settings = try JSONDecoder().decode(GitConnectionSettingsSerialized.self, from: data)
     }
 
     public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {

@@ -1,5 +1,5 @@
-import CGit2
 import Foundation
+import CGit2
 
 /// The git `Index` for a repository.
 public final class Index {

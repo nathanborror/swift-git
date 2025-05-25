@@ -1,7 +1,8 @@
-import CGit2
 import Foundation
+import CGit2
 
 extension Index {
+    
     public enum EntryStage: Int {
         case normal = 0
         case ancestor = 1

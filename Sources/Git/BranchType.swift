@@ -1,7 +1,6 @@
-import CGit2
 import Foundation
+import CGit2
 
-/// A type of branch.
 public struct BranchType: OptionSet, Sendable {
     public var rawValue: UInt32
 
@@ -14,12 +13,7 @@ public struct BranchType: OptionSet, Sendable {
         git_branch_t(rawValue: rawValue)
     }
 
-    /// A local branch.
     public static let local = BranchType(rawValue: GIT_BRANCH_LOCAL.rawValue)
-
-    /// A remote branch.
     public static let remote = BranchType(rawValue: GIT_BRANCH_REMOTE.rawValue)
-
-    /// All branch types.
     public static let all: BranchType = [.local, .remote]
 }

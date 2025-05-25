@@ -15,16 +15,10 @@ public enum Credentials: Sendable {
     case sshMemory(username: String, publicKey: String, privateKey: String, passphrase: String)
 }
 
-/// Handle the request of credentials, passing through to a wrapped block after converting the arguments.
-/// Converts the result to the correct error code required by libgit2 (0 = success, 1 = rejected setting creds,
-/// -1 = error)
-internal func credentialsCallback(
-    cred: UnsafeMutablePointer<UnsafeMutablePointer<git_cred>?>?,
-    url: UnsafePointer<CChar>?,
-    username: UnsafePointer<CChar>?,
-    allowedOptions: UInt32,
-    payload: UnsafeMutableRawPointer?
-) -> Int32 {
+/// Handle the request of credentials, passing through to a wrapped block after converting the arguments. Converts the result to the correct error code required
+/// by libgit2 (0 = success, 1 = rejected setting creds, -1 = error)
+internal func credentialsCallback(cred: UnsafeMutablePointer<UnsafeMutablePointer<git_cred>?>?, url: UnsafePointer<CChar>?,
+                                  username: UnsafePointer<CChar>?, allowedOptions: UInt32, payload: UnsafeMutableRawPointer?) -> Int32 {
     let result: Int32
 
     // Find username_from_url
