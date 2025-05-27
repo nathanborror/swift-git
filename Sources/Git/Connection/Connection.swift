@@ -1,19 +1,11 @@
 import Foundation
 
-extension CodingUserInfoKey {
-    /// Include this key in `JSONEncoder.userInfo` (and set it to any non-nil value) to include the password in the serialized settings.
-    public static let includeConnectionPasswordKey = CodingUserInfoKey(
-        rawValue: "com.git-scm.includeConnectionPassword"
-    )!
-}
-
 /// Type for all of the settings required to connect to a remote ``Repository``.
 ///
-/// This type is designed for use in UI components that let people fill out sync settings -- it is possible to have invalid settings (e.g., missing required values or invalid connection strings).
-/// You can determine if the contents of this type are valid for synchronization by using ``isValid``.
-///
-/// If the type is valid, you can get ``Credentials`` for connection and a ``Signature`` for authoring commits.
-public struct GitConnectionSettings: Codable, Equatable, Sendable {
+/// This type is designed for use in UI components that let people fill out sync settings -- it is possible to have invalid settings (e.g., missing required values or
+/// invalid connection strings). You can determine if the contents of this type are valid for synchronization by using ``isValid``. If the type is valid, you can
+/// get ``Credentials`` for connection and a ``Signature`` for authoring commits.
+public struct Connection: Codable, Equatable, Sendable {
 
     public enum AuthenticationType: String, Codable, Sendable {
         case usernamePassword = "https"  // There are serialized versions of settings that called this "https"

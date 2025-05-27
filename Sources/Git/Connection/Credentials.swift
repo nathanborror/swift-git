@@ -1,13 +1,5 @@
 import CGit2
 
-private class Wrapper<T> {
-    let value: T
-
-    init(_ value: T) {
-        self.value = value
-    }
-}
-
 public enum Credentials: Sendable {
     case `default`
     case sshAgent

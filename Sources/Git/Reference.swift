@@ -25,26 +25,20 @@ public final class Reference {
     /// The first ``Commit`` object associated with this reference.
     public var commit: Commit {
         get throws {
-            let commitPointer = try GitError.checkAndReturn(
-                apiName: "git_reference_peel",
-                closure: { commitPointer in
-                    git_reference_peel(&commitPointer, referencePointer, GIT_OBJECT_COMMIT)
-                }
-            )
-            return Commit(commitPointer)
+            let commit = try ExecReturn("git_reference_peel") { pointer in
+                git_reference_peel(&pointer, referencePointer, GIT_OBJECT_COMMIT)
+            }
+            return Commit(commit)
         }
     }
 
     /// The first ``Tree`` object associated with this reference.
     public var tree: Tree {
         get throws {
-            let treePointer = try GitError.checkAndReturn(
-                apiName: "git_reference_peel",
-                closure: { pointer in
-                    git_reference_peel(&pointer, referencePointer, GIT_OBJECT_TREE)
-                }
-            )
-            return Tree(treePointer)
+            let tree = try ExecReturn("git_reference_peel") { pointer in
+                git_reference_peel(&pointer, referencePointer, GIT_OBJECT_TREE)
+            }
+            return Tree(tree)
         }
     }
 
@@ -54,13 +48,10 @@ public final class Reference {
     public var upstream: Reference? {
         get throws {
             do {
-                let upstreamPointer = try GitError.checkAndReturn(
-                    apiName: "git_branch_upstream",
-                    closure: { pointer in
-                        git_branch_upstream(&pointer, referencePointer)
-                    }
-                )
-                return Reference(pointer: upstreamPointer)
+                let upstream = try ExecReturn("git_branch_upstream") { pointer in
+                    git_branch_upstream(&pointer, referencePointer)
+                }
+                return Reference(pointer: upstream)
             } catch let error as GitError {
                 if error.code == GIT_ENOTFOUND.rawValue {
                     return nil

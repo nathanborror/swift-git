@@ -25,23 +25,17 @@ public final class Index {
 
     /// Adds an entry to the index.
     public func addEntry(_ entry: Entry) throws {
-        var gitEntry = entry.gitEntry
-        try GitError.check(
-            apiName: "git_index_add",
-            closure: {
-                git_index_add(indexPointer, &gitEntry)
-            }
-        )
+        var entry = entry.gitEntry
+        try Exec("git_index_add") {
+            git_index_add(indexPointer, &entry)
+        }
     }
 
     /// Removes any conflict entries for `path`.
     public func removeConflictEntries(for path: String) throws {
-        try GitError.check(
-            apiName: "git_index_conflict_remove",
-            closure: {
-                git_index_conflict_remove(indexPointer, path)
-            }
-        )
+        try Exec("git_index_conflict_remove") {
+            git_index_conflict_remove(indexPointer, path)
+        }
     }
 }
 
@@ -56,32 +50,29 @@ extension Index {
 
         /// Iterates through the conflicting entries in an index.
         public final class Iterator: IteratorProtocol {
-            let iteratorPointer: OpaquePointer?
+            let iterator: OpaquePointer?
 
             init(index: Index) {
-                self.iteratorPointer = try? GitError.checkAndReturn(
-                    apiName: "git_index_conflict_iterator_new",
-                    closure: { pointer in
-                        git_index_conflict_iterator_new(&pointer, index.indexPointer)
-                    }
-                )
+                self.iterator = try? ExecReturn("git_index_conflict_iterator_new") { pointer in
+                    git_index_conflict_iterator_new(&pointer, index.indexPointer)
+                }
             }
 
             deinit {
-                if let iteratorPointer {
-                    git_index_conflict_iterator_free(iteratorPointer)
+                if let iterator {
+                    git_index_conflict_iterator_free(iterator)
                 }
             }
 
             public func next() -> ConflictEntry? {
-                guard let iteratorPointer else {
+                guard let iterator else {
                     return nil
                 }
                 var ancestor: UnsafePointer<git_index_entry>?
                 var ours: UnsafePointer<git_index_entry>?
                 var theirs: UnsafePointer<git_index_entry>?
 
-                if git_index_conflict_next(&ancestor, &ours, &theirs, iteratorPointer) == 0 {
+                if git_index_conflict_next(&ancestor, &ours, &theirs, iterator) == 0 {
                     let conflictEntry = ConflictEntry(
                         ancestor: Entry(ancestor),
                         ours: Entry(ours),

@@ -23,10 +23,7 @@ public protocol GitConflictResolver {
     ///   - index: The repository index.
     ///   - repository: The repository.
     /// - Returns: A tuple indicating if the conflict was resolved, and if so, whether we need to check out the Index to update the working directory.
-    func resolveConflict(_ conflict: Index.ConflictEntry, index: Index, repository: Repository)
-        throws -> (
-            resolved: Bool, requiresCheckout: Bool
-        )
+    func resolveConflict(_ conflict: Index.ConflictEntry, index: Index, repository: Repository) throws -> (resolved: Bool, requiresCheckout: Bool)
 }
 
 /// A value that represents progress towards a goal.
@@ -45,10 +42,9 @@ public final class Repository {
     typealias FetchProgressBlock = (FetchProgress) -> Void
     typealias CloneProgressBlock = (Result<Double, Error>) -> Void
 
-    /// The CGit2 repository pointer managed by this actor.
-    private let repositoryPointer: OpaquePointer
+    private let repo: OpaquePointer
 
-    /// If true, this class is the owner of `repositoryPointer` and should free it on deinit.
+    /// If true, this class is the owner of `repo` and should free it on deinit.
     private let isOwner: Bool
 
     /// The working directory of the repository, or `nil` if this is a bare repository.
@@ -59,8 +55,7 @@ public final class Repository {
     ///   - url: The location to create a Git repository at.
     ///   - bare: Whether the repository should be "bare". A bare repository does not have a corresponding working directory.
     public convenience init(createAt url: URL, bare: Bool = false) throws {
-        let repositoryPointer = try GitError.checkAndReturn(apiName: "git_repository_init") {
-            pointer in
+        let repo = try ExecReturn("git_repository_init") { pointer in
             url.withUnsafeFileSystemRepresentation { fileSystemPath in
                 "main".withCString { branchNamePointer in
                     var options = git_repository_init_options()
@@ -75,25 +70,24 @@ public final class Repository {
                 }
             }
         }
-        self.init(repositoryPointer: repositoryPointer, isOwner: true)
+        self.init(repo: repo, isOwner: true)
     }
 
     /// Opens a git repository at a specified location.
     /// - Parameter url: The location of the repository to open.
     public convenience init(openAt url: URL) throws {
-        let repositoryPointer = try GitError.checkAndReturn(apiName: "git_repository_open") {
-            pointer in
+        let repo = try ExecReturn("git_repository_open") { pointer in
             url.withUnsafeFileSystemRepresentation { fileSystemPath in
                 git_repository_open(&pointer, fileSystemPath)
             }
         }
-        self.init(repositoryPointer: repositoryPointer, isOwner: true)
+        self.init(repo: repo, isOwner: true)
     }
 
-    init(repositoryPointer: OpaquePointer, isOwner: Bool) {
-        self.repositoryPointer = repositoryPointer
+    init(repo: OpaquePointer, isOwner: Bool) {
+        self.repo = repo
         self.isOwner = isOwner
-        if let pathPointer = git_repository_workdir(repositoryPointer),
+        if let pathPointer = git_repository_workdir(repo),
             let path = String(validatingUTF8: pathPointer)
         {
             self.workingDirectoryURL = URL(fileURLWithPath: path, isDirectory: true)
@@ -104,7 +98,7 @@ public final class Repository {
 
     deinit {
         if isOwner {
-            git_repository_free(repositoryPointer)
+            git_repository_free(repo)
         }
     }
 
@@ -114,15 +108,9 @@ public final class Repository {
     ///   - localURL: The URL of the local destination for the repository.
     ///   - credentials: Credentials to use to connect to `remoteURL`
     /// - Returns: A ``Repository`` representing the new local copy.
-    public static func clone(
-        from remoteURL: URL,
-        to localURL: URL,
-        credentials: Credentials = .default
-    ) async throws -> Repository {
+    public static func clone(from remoteURL: URL, to localURL: URL, credentials: Credentials = .default) async throws -> Repository {
         var repository: Repository?
-        for try await progress in cloneProgress(
-            from: remoteURL, to: localURL, credentials: credentials)
-        {
+        for try await progress in cloneProgress(from: remoteURL, to: localURL, credentials: credentials) {
             switch progress {
             case .completed(let repo):
                 repository = repo
@@ -135,33 +123,28 @@ public final class Repository {
 
     /// Clones a repository, reporting progress.
     /// - returns: An `AsyncThrowingStream` that returns intermediate ``FetchProgress`` while fetching and the final ``Repository`` upon completion.
-    public static func cloneProgress(
-        from remoteURL: URL,
-        to localURL: URL,
-        credentials: Credentials = .default
-    ) -> AsyncThrowingStream<Progress<FetchProgress, Repository>, Error> {
+    public static func cloneProgress(from remoteURL: URL, to localURL: URL, credentials: Credentials = .default) -> AsyncThrowingStream<Progress<FetchProgress, Repository>, Error> {
         AsyncThrowingStream<Progress<FetchProgress, Repository>, Error> { continuation in
             let progressCallback: FetchProgressBlock = { progress in
                 continuation.yield(.progress(progress))
             }
             let cloneOptions = CloneOptions(
                 fetchOptions: FetchOptions(
-                    credentials: credentials, progressCallback: progressCallback)
+                    credentials: credentials,
+                    progressCallback: progressCallback
+                )
             )
             do {
-                let repositoryPointer = try cloneOptions.withOptions { options -> OpaquePointer in
+                let repo = try cloneOptions.withOptions { options -> OpaquePointer in
                     var options = options
-                    return try GitError.checkAndReturn(
-                        apiName: "git_clone",
-                        closure: { pointer in
-                            localURL.withUnsafeFileSystemRepresentation { filePath in
-                                git_clone(&pointer, remoteURL.absoluteString, filePath, &options)
-                            }
+                    return try ExecReturn("git_clone") { pointer in
+                        localURL.withUnsafeFileSystemRepresentation { filePath in
+                            git_clone(&pointer, remoteURL.absoluteString, filePath, &options)
                         }
-                    )
+                    }
                 }
                 continuation.yield(
-                    .completed(Repository(repositoryPointer: repositoryPointer, isOwner: true)))
+                    .completed(Repository(repo: repo, isOwner: true)))
                 continuation.finish()
             } catch {
                 continuation.finish(throwing: error)
@@ -176,23 +159,17 @@ public final class Repository {
     ///   - name: The name of the remote. (E.g., `origin`)
     ///   - url: The URL for the remote.
     public func addRemote(_ name: String, url: URL) throws {
-        let remotePointer = try GitError.checkAndReturn(
-            apiName: "git_remote_create",
-            closure: { pointer in
-                git_remote_create(&pointer, repositoryPointer, name, url.absoluteString)
-            }
-        )
-        git_remote_free(remotePointer)
+        let remote = try ExecReturn("git_remote_create") { pointer in
+            git_remote_create(&pointer, repo, name, url.absoluteString)
+        }
+        git_remote_free(remote)
     }
 
     /// Deletes the named remote from the repository.
     public func deleteRemote(_ name: String) throws {
-        try GitError.check(
-            apiName: "git_remote_delete",
-            closure: {
-                git_remote_delete(repositoryPointer, name)
-            }
-        )
+        try Exec("git_remote_delete") {
+            git_remote_delete(repo, name)
+        }
     }
 
     /// Returns the URL associated with a particular git remote name.
@@ -201,12 +178,9 @@ public final class Repository {
     /// - throws: ``GitError`` on any other error.
     public func remoteURL(for remoteName: String) throws -> URL? {
         do {
-            let remotePointer = try GitError.checkAndReturn(
-                apiName: "git_remote_lookup",
-                closure: { pointer in
-                    git_remote_lookup(&pointer, repositoryPointer, remoteName)
-                }
-            )
+            let remotePointer = try ExecReturn("git_remote_lookup") { pointer in
+                git_remote_lookup(&pointer, repo, remoteName)
+            }
             defer {
                 git_remote_free(remotePointer)
             }
@@ -233,21 +207,15 @@ public final class Repository {
     ///   - force: If true, force create the branch. If false, this operation will fail if a branch named `name` already exists.
     public func createBranch(named name: String, commitOID: ObjectID, force: Bool = false) throws {
         var oid = commitOID.oid
-        let commitPointer = try GitError.checkAndReturn(
-            apiName: "git_commit_lookup",
-            closure: { pointer in
-                git_commit_lookup(&pointer, repositoryPointer, &oid)
-            }
-        )
+        let commitPointer = try ExecReturn("git_commit_lookup") { pointer in
+            git_commit_lookup(&pointer, repo, &oid)
+        }
         defer {
             git_object_free(commitPointer)
         }
-        let branchPointer = try GitError.checkAndReturn(
-            apiName: "git_branch_create",
-            closure: { pointer in
-                git_branch_create(&pointer, repositoryPointer, name, commitPointer, force ? 1 : 0)
-            }
-        )
+        let branchPointer = try ExecReturn("git_branch_create") { pointer in
+            git_branch_create(&pointer, repo, name, commitPointer, force ? 1 : 0)
+        }
         git_reference_free(branchPointer)
     }
 
@@ -257,45 +225,29 @@ public final class Repository {
     ///   - target: The name of the reference to target.
     ///   - force: If true, force create the branch. If false, this operation will fail if a branch named `name` already exists.
     ///   - setTargetAsUpstream: If true, set `target` as the upstream branch of the newly created branch.
-    public func createBranch(
-        named name: String, target: String, force: Bool = false, setTargetAsUpstream: Bool = false
-    )
-        throws
-    {
-        let referencePointer = try GitError.checkAndReturn(
-            apiName: "git_reference_dwim",
-            closure: { pointer in
-                git_reference_dwim(&pointer, repositoryPointer, target)
-            }
-        )
+    public func createBranch(named name: String, target: String, force: Bool = false, setTargetAsUpstream: Bool = false) throws {
+        let referencePointer = try ExecReturn("git_reference_dwim") { pointer in
+            git_reference_dwim(&pointer, repo, target)
+        }
         defer {
             git_reference_free(referencePointer)
         }
-        let commitPointer = try GitError.checkAndReturn(
-            apiName: "git_reference_peel",
-            closure: { pointer in
-                git_reference_peel(&pointer, referencePointer, GIT_OBJECT_COMMIT)
-            }
-        )
+        let commitPointer = try ExecReturn("git_reference_peel") { pointer in
+            git_reference_peel(&pointer, referencePointer, GIT_OBJECT_COMMIT)
+        }
         defer {
             git_object_free(commitPointer)
         }
-        let branchPointer = try GitError.checkAndReturn(
-            apiName: "git_branch_create",
-            closure: { pointer in
-                git_branch_create(&pointer, repositoryPointer, name, commitPointer, force ? 1 : 0)
-            }
-        )
+        let branchPointer = try ExecReturn("git_branch_create") { pointer in
+            git_branch_create(&pointer, repo, name, commitPointer, force ? 1 : 0)
+        }
         defer {
             git_reference_free(branchPointer)
         }
         if setTargetAsUpstream {
-            try GitError.check(
-                apiName: "git_branch_set_upstream",
-                closure: {
-                    git_branch_set_upstream(branchPointer, target)
-                }
-            )
+            try Exec("git_branch_set_upstream") {
+                git_branch_set_upstream(branchPointer, target)
+            }
         }
     }
 
@@ -309,31 +261,22 @@ public final class Repository {
     /// - throws ``GitError`` on any other error.
     public func deleteBranch(named name: String) throws -> ObjectID? {
         do {
-            let branchPointer = try GitError.checkAndReturn(
-                apiName: "git_branch_lookup",
-                closure: { pointer in
-                    git_branch_lookup(&pointer, repositoryPointer, name, BranchType.all.gitType)
-                }
-            )
+            let branchPointer = try ExecReturn("git_branch_lookup") { pointer in
+                git_branch_lookup(&pointer, repo, name, BranchType.all.gitType)
+            }
             defer {
                 git_reference_free(branchPointer)
             }
-            let commitPointer = try GitError.checkAndReturn(
-                apiName: "git_reference_peel",
-                closure: { pointer in
-                    git_reference_peel(&pointer, branchPointer, GIT_OBJECT_COMMIT)
-                }
-            )
+            let commitPointer = try ExecReturn("git_reference_peel") { pointer in
+                git_reference_peel(&pointer, branchPointer, GIT_OBJECT_COMMIT)
+            }
             defer {
                 git_object_free(commitPointer)
             }
             let oid = git_commit_id(commitPointer)
-            try GitError.check(
-                apiName: "git_branch_delete",
-                closure: {
-                    git_branch_delete(branchPointer)
-                }
-            )
+            try Exec("git_branch_delete") {
+                git_branch_delete(branchPointer)
+            }
             return ObjectID(oid)
         } catch let error as GitError {
             if error.code == GIT_ENOTFOUND.rawValue {
@@ -348,12 +291,9 @@ public final class Repository {
     /// - Parameter type: The type of branch to query for.
     /// - Returns: The current branch names in the repository.
     public func branches(type: BranchType) throws -> [String] {
-        let branchIterator = try GitError.checkAndReturn(
-            apiName: "git_branch_iterator_new",
-            closure: { pointer in
-                git_branch_iterator_new(&pointer, repositoryPointer, type.gitType)
-            }
-        )
+        let branchIterator = try ExecReturn("git_branch_iterator_new") { pointer in
+            git_branch_iterator_new(&pointer, repo, type.gitType)
+        }
         defer {
             git_branch_iterator_free(branchIterator)
         }
@@ -378,12 +318,9 @@ public final class Repository {
     /// - Returns: The remote name
     public func remoteName(branchName: String) throws -> String {
         var buffer = git_buf()
-        try GitError.check(
-            apiName: "git_branch_remote_name",
-            closure: {
-                git_branch_remote_name(&buffer, repositoryPointer, branchName)
-            }
-        )
+        try Exec("git_branch_remote_name") {
+            git_branch_remote_name(&buffer, repo, branchName)
+        }
         return String(cString: buffer.ptr)
     }
 
@@ -392,12 +329,9 @@ public final class Repository {
     /// - Returns: True if the branch exists, false otherwise.
     public func branchExists(named name: String) throws -> Bool {
         do {
-            let branchPointer = try GitError.checkAndReturn(
-                apiName: "git_branch_lookup",
-                closure: { pointer in
-                    git_branch_lookup(&pointer, repositoryPointer, name, GIT_BRANCH_LOCAL)
-                }
-            )
+            let branchPointer = try ExecReturn("git_branch_lookup") { pointer in
+                git_branch_lookup(&pointer, repo, name, GIT_BRANCH_LOCAL)
+            }
             git_reference_free(branchPointer)
             return true
         } catch let error as GitError {
@@ -417,12 +351,9 @@ public final class Repository {
     /// - throws ``GitError`` if there is no upstream branch.
     public func upstreamName(of branchName: String) throws -> String {
         var buffer = git_buf()
-        try GitError.check(
-            apiName: "git_branch_upstream_name",
-            closure: {
-                git_branch_upstream_name(&buffer, repositoryPointer, branchName)
-            }
-        )
+        try Exec("git_branch_upstream_name") {
+            git_branch_upstream_name(&buffer, repo, branchName)
+        }
         defer {
             git_buf_dispose(&buffer)
         }
@@ -437,12 +368,9 @@ public final class Repository {
     /// - Returns: The corresponding ``Reference`` if it exists, or `nil` if a reference named `name` is not found in the repository.
     public func lookupReference(name: String) throws -> Reference? {
         do {
-            let referencePointer = try GitError.checkAndReturn(
-                apiName: "git_reference_lookup",
-                closure: { pointer in
-                    git_reference_lookup(&pointer, repositoryPointer, name)
-                }
-            )
+            let referencePointer = try ExecReturn("git_reference_lookup") { pointer in
+                git_reference_lookup(&pointer, repo, name)
+            }
             return Reference(pointer: referencePointer)
         } catch let error as GitError {
             if error.code == GIT_ENOTFOUND.rawValue {
@@ -457,12 +385,9 @@ public final class Repository {
     /// - Returns: The object ID for the reference.
     public func lookupReferenceID(referenceLongName: String) throws -> ObjectID? {
         do {
-            return try GitError.checkAndReturnOID(
-                apiName: "git_reference_name_to_id",
-                closure: { oid in
-                    git_reference_name_to_id(&oid, repositoryPointer, referenceLongName)
-                }
-            )
+            return try ExecReturnID("git_reference_name_to_id") { oid in
+                git_reference_name_to_id(&oid, repo, referenceLongName)
+            }
         } catch let error as GitError {
             if error.code == GIT_ENOTFOUND.rawValue {
                 return nil
@@ -477,13 +402,10 @@ public final class Repository {
     /// - Parameter objectID: The object ID to load.
     /// - Returns: The data associated with the object ID.
     public func data(for objectID: ObjectID) throws -> Data {
-        let blobPointer = try GitError.checkAndReturn(
-            apiName: "git_blob_lookup",
-            closure: { pointer in
-                var oid = objectID.oid
-                return git_blob_lookup(&pointer, repositoryPointer, &oid)
-            }
-        )
+        let blobPointer = try ExecReturn("git_blob_lookup") { pointer in
+            var oid = objectID.oid
+            return git_blob_lookup(&pointer, repo, &oid)
+        }
         defer {
             git_blob_free(blobPointer)
         }
@@ -505,56 +427,44 @@ public final class Repository {
             indexEntry.ctime = indexTime
             indexEntry.mtime = indexTime
             indexEntry.mode = 0o100644
-            let indexPointer = try GitError.checkAndReturn(
-                apiName: "git_repository_index",
-                closure: { pointer in
-                    git_repository_index(&pointer, repositoryPointer)
-                }
-            )
+            let indexPointer = try ExecReturn("git_repository_index") { pointer in
+                git_repository_index(&pointer, repo)
+            }
             defer {
                 git_index_free(indexPointer)
             }
             try data.withUnsafeBytes { bufferPointer in
-                try GitError.check(
-                    apiName: "git_index_add_from_buffer",
-                    closure: {
-                        git_index_add_from_buffer(
-                            indexPointer, &indexEntry, bufferPointer.baseAddress, data.count)
-                    }
-                )
+                try Exec("git_index_add_from_buffer") {
+                    git_index_add_from_buffer(
+                        indexPointer, &indexEntry, bufferPointer.baseAddress, data.count)
+                }
             }
         }
     }
 
     /// A stream that emits ``FetchProgress`` structs during a fetch and concludes with the name of the default branch of the remote when the fetch is complete.
-    public typealias FetchProgressStream = AsyncThrowingStream<
-        Progress<FetchProgress, String?>, Error
-    >
+    public typealias FetchProgressStream = AsyncThrowingStream<Progress<FetchProgress, String?>, Error>
 
     /// Fetch from a named remote.
     /// - Parameters:
     ///   - remote: The remote to fetch
     ///   - credentials: Credentials to use for the fetch.
     /// - returns: An AsyncThrowingStream that emits the fetch progress. The fetch is not done until this stream finishes yielding values.
-    public func fetchProgress(
-        remote: String,
-        pruneOption: FetchPruneOption = .unspecified,
-        credentials: Credentials = .default
-    ) -> FetchProgressStream {
+    public func fetchProgress(remote: String, pruneOption: FetchPruneOption = .unspecified, credentials: Credentials = .default) -> FetchProgressStream {
         let fetchOptions = FetchOptions(
-            credentials: credentials, pruneOption: pruneOption, progressCallback: nil)
+            credentials: credentials,
+            pruneOption: pruneOption,
+            progressCallback: nil
+        )
         let resultStream = FetchProgressStream { continuation in
             Task {
                 fetchOptions.progressCallback = { progressResult in
                     continuation.yield(.progress(progressResult))
                 }
                 do {
-                    let remotePointer = try GitError.checkAndReturn(
-                        apiName: "git_remote_lookup",
-                        closure: { pointer in
-                            git_remote_lookup(&pointer, repositoryPointer, remote)
-                        }
-                    )
+                    let remotePointer = try ExecReturn("git_remote_lookup") { pointer in
+                        git_remote_lookup(&pointer, repo, remote)
+                    }
                     defer {
                         git_remote_free(remotePointer)
                     }
@@ -562,22 +472,16 @@ public final class Repository {
                         let remoteURLString = String(cString: remoteURL)
                         print("Fetching from \(remoteURLString)")
                     }
-                    try GitError.check(
-                        apiName: "git_remote_fetch",
-                        closure: {
-                            fetchOptions.withOptions { options in
-                                git_remote_fetch(remotePointer, nil, &options, "fetch")
-                            }
+                    try Exec("git_remote_fetch") {
+                        fetchOptions.withOptions { options in
+                            git_remote_fetch(remotePointer, nil, &options, "fetch")
                         }
-                    )
+                    }
                     do {
                         var buffer = git_buf()
-                        try GitError.check(
-                            apiName: "git_remote_default_branch",
-                            closure: {
-                                git_remote_default_branch(&buffer, remotePointer)
-                            }
-                        )
+                        try Exec("git_remote_default_branch") {
+                            git_remote_default_branch(&buffer, remotePointer)
+                        }
                         defer {
                             git_buf_free(&buffer)
                         }
@@ -604,42 +508,31 @@ public final class Repository {
     ///   - referenceShorthand: The reference to checkout. This can be a shorthand name (e.g., `main`) and git will resolve it using precedence rules to a full reference (`refs/heads/main`).
     ///   - checkoutStrategy: The checkout strategy.
     /// - Returns: An `AsyncThrowingStream` that emits ``CheckoutProgress`` structs reporting on the progress of checkout. Checkout is complete when the stream terminates.
-    public func checkoutProgress(
-        referenceShorthand: String, checkoutStrategy: git_checkout_strategy_t = GIT_CHECKOUT_SAFE
-    ) -> AsyncThrowingStream<CheckoutProgress, Error> {
+    public func checkoutProgress(referenceShorthand: String, checkoutStrategy: git_checkout_strategy_t = GIT_CHECKOUT_SAFE) -> AsyncThrowingStream<CheckoutProgress, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
                     try checkNormalState()
-                    let referencePointer = try GitError.checkAndReturn(
-                        apiName: "git_reference_dwim",
-                        closure: { pointer in
-                            git_reference_dwim(&pointer, repositoryPointer, referenceShorthand)
-                        }
-                    )
+                    let referencePointer = try ExecReturn("git_reference_dwim") { pointer in
+                        git_reference_dwim(&pointer, repo, referenceShorthand)
+                    }
                     defer {
                         git_reference_free(referencePointer)
                     }
                     let referenceName = String(cString: git_reference_name(referencePointer))
                     print("Checking out \(referenceName)")
-                    let annotatedCommit = try GitError.checkAndReturn(
-                        apiName: "git_annotated_commit_from_ref",
-                        closure: { pointer in
-                            git_annotated_commit_from_ref(
-                                &pointer, repositoryPointer, referencePointer)
-                        }
-                    )
+                    let annotatedCommit = try ExecReturn("git_annotated_commit_from_ref") { pointer in
+                        git_annotated_commit_from_ref(
+                            &pointer, repo, referencePointer)
+                    }
                     defer {
                         git_annotated_commit_free(annotatedCommit)
                     }
-                    let commitPointer = try GitError.checkAndReturn(
-                        apiName: "git_commit_lookup",
-                        closure: { pointer in
-                            git_commit_lookup(
-                                &pointer, repositoryPointer,
-                                git_annotated_commit_id(annotatedCommit))
-                        }
-                    )
+                    let commitPointer = try ExecReturn("git_commit_lookup") { pointer in
+                        git_commit_lookup(
+                            &pointer, repo,
+                            git_annotated_commit_id(annotatedCommit))
+                    }
                     defer {
                         git_commit_free(commitPointer)
                     }
@@ -648,12 +541,9 @@ public final class Repository {
                         continuation.yield(progress)
                     }
                     try checkoutOptions.withOptions { options in
-                        try GitError.check(
-                            apiName: "git_checkout_tree",
-                            closure: {
-                                git_checkout_tree(repositoryPointer, commitPointer, &options)
-                            }
-                        )
+                        try Exec("git_checkout_tree") {
+                            git_checkout_tree(repo, commitPointer, &options)
+                        }
                     }
 
                     let targetRefname = git_reference_name(referencePointer)
@@ -662,20 +552,14 @@ public final class Repository {
                     if git_reference_is_remote(referencePointer) != 0 {
                         print("Reference is remote, setting detached HEAD")
 
-                        try GitError.check(
-                           apiName: "git_repository_set_head_detached_from_annotated",
-                           closure: {
-                               git_repository_set_head_detached_from_annotated(repositoryPointer, annotatedCommit)
-                           }
-                       )
+                        try Exec("git_repository_set_head_detached_from_annotated") {
+                           git_repository_set_head_detached_from_annotated(repo, annotatedCommit)
+                       }
                     } else {
                         print("Setting HEAD to: \(String(cString: targetRefname!))")
-                        try GitError.check(
-                            apiName: "git_repository_set_head",
-                            closure: {
-                                git_repository_set_head(repositoryPointer, targetRefname)
-                            }
-                        )
+                        try Exec("git_repository_set_head") {
+                            git_repository_set_head(repo, targetRefname)
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -690,12 +574,9 @@ public final class Repository {
         get throws {
             var options = git_status_options()
             git_status_options_init(&options, UInt32(GIT_STATUS_OPTIONS_VERSION))
-            let statusList = try GitError.checkAndReturn(
-                apiName: "git_status_list_new",
-                closure: { pointer in
-                    git_status_list_new(&pointer, repositoryPointer, &options)
-                }
-            )
+            let statusList = try ExecReturn("git_status_list_new") { pointer in
+                git_status_list_new(&pointer, repo, &options)
+            }
             defer {
                 git_status_list_free(statusList)
             }
@@ -715,10 +596,8 @@ public final class Repository {
     public enum MergeResult: Equatable {
         /// We fast-forwarded the current branch to a new commit.
         case fastForward(ObjectID)
-
         /// We created a merge commit in the current branch.
         case merge(ObjectID)
-
         /// No action was taken -- the current branch already has all changes from the target branch.
         case none
 
@@ -744,20 +623,13 @@ public final class Repository {
     ///   - signatureBlock: A block that returns a ``Signature`` for the resulting merge commit.
     /// - Returns: A ``MergeResult`` describing the outcome of the merge.
     /// - throws ``GitError`` if the merge could not complete without conflicts.
-    public func merge(
-        revisionSpecification: String,
-        resolver: GitConflictResolver? = nil,
-        signature signatureBlock: @autoclosure () throws -> Signature
-    ) throws -> MergeResult {
+    public func merge(revisionSpecification: String, resolver: GitConflictResolver? = nil, signature signatureBlock: @autoclosure () throws -> Signature) throws -> MergeResult {
         try checkNormalState()
 
-        let annotatedCommit = try GitError.checkAndReturn(
-            apiName: "git_annotated_commit_from_revspec",
-            closure: { pointer in
-                git_annotated_commit_from_revspec(
-                    &pointer, repositoryPointer, revisionSpecification)
-            }
-        )
+        let annotatedCommit = try ExecReturn("git_annotated_commit_from_revspec") { pointer in
+            git_annotated_commit_from_revspec(
+                &pointer, repo, revisionSpecification)
+        }
         defer {
             git_annotated_commit_free(annotatedCommit)
         }
@@ -765,16 +637,11 @@ public final class Repository {
         var analysis = GIT_MERGE_ANALYSIS_NONE
         var mergePreference = GIT_MERGE_PREFERENCE_NONE
         var theirHeads: [OpaquePointer?] = [annotatedCommit]
-        try GitError.check(
-            apiName: "git_merge_analysis",
-            closure: {
-                git_merge_analysis(
-                    &analysis, &mergePreference, repositoryPointer, &theirHeads, theirHeads.count)
-            }
-        )
-        if analysis.contains(GIT_MERGE_ANALYSIS_FASTFORWARD),
-            let oid = ObjectID(git_annotated_commit_id(annotatedCommit))
-        {
+        try Exec("git_merge_analysis") {
+            git_merge_analysis(
+                &analysis, &mergePreference, repo, &theirHeads, theirHeads.count)
+        }
+        if analysis.contains(GIT_MERGE_ANALYSIS_FASTFORWARD), let oid = ObjectID(git_annotated_commit_id(annotatedCommit)) {
             // Fast forward
             try fastForward(to: oid, isUnborn: analysis.contains(GIT_MERGE_ANALYSIS_UNBORN))
             return .fastForward(oid)
@@ -796,14 +663,11 @@ public final class Repository {
                 fileFlags: GIT_MERGE_FILE_STYLE_DIFF3
             )
             try mergeOptions.withOptions { merge_options, checkout_options in
-                try GitError.check(
-                    apiName: "git_merge",
-                    closure: {
-                        git_merge(
-                            repositoryPointer, &theirHeads, theirHeads.count, &merge_options,
-                            &checkout_options)
-                    }
-                )
+                try Exec("git_merge") {
+                    git_merge(
+                        repo, &theirHeads, theirHeads.count, &merge_options,
+                        &checkout_options)
+                }
             }
             try checkForConflicts(resolver: resolver)
             let signature = try signatureBlock()
@@ -814,7 +678,6 @@ public final class Repository {
             )
             return .merge(mergeCommitOID)
         }
-
         return .none
     }
 
@@ -823,12 +686,9 @@ public final class Repository {
     /// - throws on other git errors.
     private func commitObjectID(revspec: String) throws -> ObjectID? {
         do {
-            let commitPointer = try GitError.checkAndReturn(
-                apiName: "git_revparse_single",
-                closure: { pointer in
-                    git_revparse_single(&pointer, repositoryPointer, revspec)
-                }
-            )
+            let commitPointer = try ExecReturn("git_revparse_single") { pointer in
+                git_revparse_single(&pointer, repo, revspec)
+            }
             defer {
                 git_object_free(commitPointer)
             }
@@ -866,22 +726,15 @@ public final class Repository {
         case (.some(var headOID), .some(var otherOID)):
             var ahead = 0
             var behind = 0
-            try GitError.check(
-                apiName: "git_graph_ahead_behind",
-                closure: {
-                    git_graph_ahead_behind(
-                        &ahead, &behind, repositoryPointer, &headOID.oid, &otherOID.oid)
-                }
-            )
+            try Exec("git_graph_ahead_behind") {
+                git_graph_ahead_behind(
+                    &ahead, &behind, repo, &headOID.oid, &otherOID.oid)
+            }
             return (ahead: ahead, behind: behind)
         }
     }
 
-    public func commitsAheadBehind(sourceReference: Reference?, targetReference: Reference?) throws
-        -> (
-            ahead: Int, behind: Int
-        )
-    {
+    public func commitsAheadBehind(sourceReference: Reference?, targetReference: Reference?) throws -> (ahead: Int, behind: Int) {
         let sourceObjectID = try sourceReference?.commit.objectID
         let targetObjectID = try targetReference?.commit.objectID
 
@@ -903,26 +756,18 @@ public final class Repository {
         case (.some(var headOID), .some(var otherOID)):
             var ahead = 0
             var behind = 0
-            try GitError.check(
-                apiName: "git_graph_ahead_behind",
-                closure: {
-                    git_graph_ahead_behind(
-                        &ahead, &behind, repositoryPointer, &headOID.oid, &otherOID.oid)
-                }
-            )
+            try Exec("git_graph_ahead_behind") {
+                git_graph_ahead_behind(
+                    &ahead, &behind, repo, &headOID.oid, &otherOID.oid)
+            }
             return (ahead: ahead, behind: behind)
         }
     }
 
-    private func commitMerge(revspec: String, annotatedCommit: OpaquePointer, signature: Signature)
-        throws -> ObjectID
-    {
-        let indexPointer = try GitError.checkAndReturn(
-            apiName: "git_repository_index",
-            closure: { pointer in
-                git_repository_index(&pointer, repositoryPointer)
-            }
-        )
+    private func commitMerge(revspec: String, annotatedCommit: OpaquePointer, signature: Signature) throws -> ObjectID {
+        let indexPointer = try ExecReturn("git_repository_index") { pointer in
+            git_repository_index(&pointer, repo)
+        }
         defer {
             git_index_free(indexPointer)
         }
@@ -930,61 +775,46 @@ public final class Repository {
             // TODO: Support merging into an unborn branch
             throw GitError(code: -9, apiName: "git_repository_head")
         }
-        let headCommit = try GitError.checkAndReturn(
-            apiName: "git_reference_peel",
-            closure: { pointer in
-                git_reference_peel(&pointer, headReference.referencePointer, GIT_OBJECT_COMMIT)
-            }
-        )
+        let headCommit = try ExecReturn("git_reference_peel") { pointer in
+            git_reference_peel(&pointer, headReference.referencePointer, GIT_OBJECT_COMMIT)
+        }
         defer {
             git_object_free(headCommit)
         }
-        let annotatedCommitObjectPointer = try GitError.checkAndReturn(
-            apiName: "git_commit_lookup",
-            closure: { pointer in
-                var oid = git_annotated_commit_id(annotatedCommit)!.pointee
-                return git_commit_lookup(&pointer, repositoryPointer, &oid)
-            }
-        )
+        let annotatedCommitObjectPointer = try ExecReturn("git_commit_lookup") { pointer in
+            var oid = git_annotated_commit_id(annotatedCommit)!.pointee
+            return git_commit_lookup(&pointer, repo, &oid)
+        }
         defer {
             git_object_free(annotatedCommitObjectPointer)
         }
 
-        let treeOid = try GitError.checkAndReturnOID(
-            apiName: "git_index_write_tree",
-            closure: { pointer in
-                git_index_write_tree(&pointer, indexPointer)
-            }
-        )
-        let treePointer = try GitError.checkAndReturn(
-            apiName: "git_tree_lookup",
-            closure: { pointer in
-                var oid = treeOid.oid
-                return git_tree_lookup(&pointer, repositoryPointer, &oid)
-            }
-        )
+        let treeOid = try ExecReturnID("git_index_write_tree") { pointer in
+            git_index_write_tree(&pointer, indexPointer)
+        }
+        let treePointer = try ExecReturn("git_tree_lookup") { pointer in
+            var oid = treeOid.oid
+            return git_tree_lookup(&pointer, repo, &oid)
+        }
         defer {
             git_tree_free(treePointer)
         }
 
         var parents: [OpaquePointer?] = [headCommit, annotatedCommitObjectPointer]
-        let mergeCommitOID = try GitError.checkAndReturnOID(
-            apiName: "git_commit_create",
-            closure: { pointer in
-                git_commit_create(
-                    &pointer,
-                    repositoryPointer,
-                    git_reference_name(headReference.referencePointer),
-                    signature.signature,
-                    signature.signature,
-                    nil,
-                    "Merge \(revspec)",
-                    treePointer,
-                    parents.count,
-                    &parents
-                )
-            }
-        )
+        let mergeCommitOID = try ExecReturnID("git_commit_create") { pointer in
+            git_commit_create(
+                &pointer,
+                repo,
+                git_reference_name(headReference.referencePointer),
+                signature.signature,
+                signature.signature,
+                nil,
+                "Merge \(revspec)",
+                treePointer,
+                parents.count,
+                &parents
+            )
+        }
 
         try cleanup()
 
@@ -993,28 +823,22 @@ public final class Repository {
 
     /// Throws an error if the repository is in a non-normal state (e.g., in the middle of a cherry pick or a merge)
     public func checkNormalState() throws {
-        try GitError.check(
-            apiName: "git_repository_state",
-            closure: {
-                git_repository_state(repositoryPointer)
-            }
-        )
+        try Exec("git_repository_state") {
+            git_repository_state(repo)
+        }
     }
 
     /// The current repository state.
     public var repositoryState: git_repository_state_t {
-        let code = git_repository_state(repositoryPointer)
+        let code = git_repository_state(repo)
         return git_repository_state_t(UInt32(code))
     }
 
     /// Cleans up the repository if it's in a non-normal state.
     public func cleanup() throws {
-        try GitError.check(
-            apiName: "git_repository_state_cleanup",
-            closure: {
-                git_repository_state_cleanup(repositoryPointer)
-            }
-        )
+        try Exec("git_repository_state_cleanup") {
+            git_repository_state_cleanup(repo)
+        }
     }
 
     public enum ResetType {
@@ -1035,63 +859,46 @@ public final class Repository {
     }
 
     public func reset(revspec: String, type: ResetType) throws {
-        let commitPointer = try GitError.checkAndReturn(
-            apiName: "git_revparse_single",
-            closure: { pointer in
-                git_revparse_single(&pointer, repositoryPointer, revspec)
-            }
-        )
+        let commitPointer = try ExecReturn("git_revparse_single") { pointer in
+            git_revparse_single(&pointer, repo, revspec)
+        }
         defer {
             git_object_free(commitPointer)
         }
-        try GitError.check(
-            apiName: "git_reset",
-            closure: {
-                git_reset(repositoryPointer, commitPointer, type.reset_type, nil)
-            }
-        )
+        try Exec("git_reset") {
+            git_reset(repo, commitPointer, type.reset_type, nil)
+        }
     }
 
     public func reset(commitOID: ObjectID, type: ResetType) throws {
         var oid = commitOID.oid
-        let commitPointer = try GitError.checkAndReturn(
-            apiName: "git_commit_lookup",
-            closure: { pointer in
-                git_commit_lookup(&pointer, repositoryPointer, &oid)
-            }
-        )
+        let commitPointer = try ExecReturn("git_commit_lookup") { pointer in
+            git_commit_lookup(&pointer, repo, &oid)
+        }
         defer {
             git_object_free(commitPointer)
         }
-        try GitError.check(
-            apiName: "git_reset",
-            closure: {
-                git_reset(repositoryPointer, commitPointer, type.reset_type, nil)
-            }
-        )
+        try Exec("git_reset") {
+            git_reset(repo, commitPointer, type.reset_type, nil)
+        }
     }
 
     /// The index file for this repository.
     public var index: Index {
         get throws {
-            let indexPointer = try GitError.checkAndReturn(
-                apiName: "git_repository_index",
-                closure: { pointer in
-                    git_repository_index(&pointer, repositoryPointer)
-                }
-            )
+            let indexPointer = try ExecReturn("git_repository_index") { pointer in
+                git_repository_index(&pointer, repo)
+            }
             return Index(indexPointer)
         }
     }
 
     /// Throws ``ConflictError`` if there are conflicts in the current repository.
     public func checkForConflicts(resolver: GitConflictResolver?) throws {
-        // See if there were conflicts
-        let index = try index
+        let index = try index // See if there were conflicts
 
         if !index.hasConflicts {
-            // No conflicts
-            return
+            return // No conflicts
         }
 
         // Try to resolve any conflicts
@@ -1115,28 +922,17 @@ public final class Repository {
             // Do a checkout to make sure the working directory is up-to-date.
             let forceOptions = CheckoutOptions(checkoutStrategy: GIT_CHECKOUT_FORCE)
             try forceOptions.withOptions { options in
-                try GitError.check(
-                    apiName: "git_checkout_index",
-                    closure: {
-                        git_checkout_index(repositoryPointer, index.indexPointer, &options)
-                    }
-                )
+                try Exec("git_checkout_index") {
+                    git_checkout_index(repo, index.indexPointer, &options)
+                }
             }
         }
     }
 
-    private func enumerateConflicts(
-        in indexPointer: OpaquePointer,
-        _ block: (
-            _ ancestor: git_index_entry?, _ ours: git_index_entry?, _ theirs: git_index_entry?
-        ) throws -> Void
-    ) throws {
-        let iteratorPointer = try GitError.checkAndReturn(
-            apiName: "git_index_conflict_iterator_new",
-            closure: { pointer in
-                git_index_conflict_iterator_new(&pointer, indexPointer)
-            }
-        )
+    private func enumerateConflicts(in indexPointer: OpaquePointer, _ block: (_ ancestor: git_index_entry?, _ ours: git_index_entry?, _ theirs: git_index_entry?) throws -> Void) throws {
+        let iteratorPointer = try ExecReturn("git_index_conflict_iterator_new") { pointer in
+            git_index_conflict_iterator_new(&pointer, indexPointer)
+        }
         defer {
             git_index_conflict_iterator_free(iteratorPointer)
         }
@@ -1151,57 +947,39 @@ public final class Repository {
     }
 
     private func fastForward(to objectID: ObjectID, isUnborn: Bool) throws {
-        let headReference =
-            isUnborn ? try createSymbolicReference(named: "HEAD", targeting: objectID) : try head!
-        let targetPointer = try GitError.checkAndReturn(
-            apiName: "git_object_lookup",
-            closure: { pointer in
-                var oid = objectID.oid
-                return git_object_lookup(&pointer, repositoryPointer, &oid, GIT_OBJECT_COMMIT)
-            }
-        )
+        let headReference = isUnborn ? try createSymbolicReference(named: "HEAD", targeting: objectID) : try head!
+        let targetPointer = try ExecReturn("git_object_lookup") { pointer in
+            var oid = objectID.oid
+            return git_object_lookup(&pointer, repo, &oid, GIT_OBJECT_COMMIT)
+        }
         defer {
             git_object_free(targetPointer)
         }
-        try GitError.check(
-            apiName: "git_checkout_tree",
-            closure: {
-                let checkoutOptions = CheckoutOptions(checkoutStrategy: GIT_CHECKOUT_SAFE)
-                return checkoutOptions.withOptions { options in
-                    git_checkout_tree(repositoryPointer, targetPointer, &options)
-                }
+        try Exec("git_checkout_tree") {
+            let checkoutOptions = CheckoutOptions(checkoutStrategy: GIT_CHECKOUT_SAFE)
+            return checkoutOptions.withOptions { options in
+                git_checkout_tree(repo, targetPointer, &options)
             }
-        )
-        let newTarget = try GitError.checkAndReturn(
-            apiName: "git_reference_set_target",
-            closure: { pointer in
-                var oid = objectID.oid
-                return git_reference_set_target(&pointer, headReference.referencePointer, &oid, nil)
-            }
-        )
+        }
+        let newTarget = try ExecReturn("git_reference_set_target") { pointer in
+            var oid = objectID.oid
+            return git_reference_set_target(&pointer, headReference.referencePointer, &oid, nil)
+        }
         git_reference_free(newTarget)
     }
 
-    private func createSymbolicReference(named name: String, targeting objectID: ObjectID) throws
-        -> Reference
-    {
-        let symbolicPointer = try GitError.checkAndReturn(
-            apiName: "git_reference_lookup",
-            closure: { pointer in
-                git_reference_lookup(&pointer, repositoryPointer, name)
-            }
-        )
+    private func createSymbolicReference(named name: String, targeting objectID: ObjectID) throws -> Reference {
+        let symbolicPointer = try ExecReturn("git_reference_lookup") { pointer in
+            git_reference_lookup(&pointer, repo, name)
+        }
         defer {
             git_reference_free(symbolicPointer)
         }
         let target = git_reference_symbolic_target(symbolicPointer)
-        let targetReference = try GitError.checkAndReturn(
-            apiName: "git_reference_create",
-            closure: { pointer in
-                var oid = objectID.oid
-                return git_reference_create(&pointer, repositoryPointer, target, &oid, 0, nil)
-            }
-        )
+        let targetReference = try ExecReturn("git_reference_create") { pointer in
+            var oid = objectID.oid
+            return git_reference_create(&pointer, repo, target, &oid, 0, nil)
+        }
         return Reference(pointer: targetReference)
     }
 
@@ -1209,12 +987,9 @@ public final class Repository {
     public var head: Reference? {
         get throws {
             do {
-                let reference = try GitError.checkAndReturn(
-                    apiName: "git_repository_head",
-                    closure: { pointer in
-                        git_repository_head(&pointer, repositoryPointer)
-                    }
-                )
+                let reference = try ExecReturn("git_repository_head") { pointer in
+                    git_repository_head(&pointer, repo)
+                }
                 return Reference(pointer: reference)
             } catch let error as GitError {
                 if error.code == GIT_EUNBORNBRANCH.rawValue {
@@ -1226,12 +1001,9 @@ public final class Repository {
     }
 
     public func setHead(referenceName: String) throws {
-        try GitError.check(
-            apiName: "git_repository_set_head",
-            closure: {
-                git_repository_set_head(repositoryPointer, referenceName)
-            }
-        )
+        try Exec("git_repository_set_head") {
+            git_repository_set_head(repo, referenceName)
+        }
     }
 
     /// The ``ObjectID`` for the current value of HEAD.
@@ -1244,12 +1016,9 @@ public final class Repository {
     /// Returns the `Tree` associated with the `HEAD` commit.
     public var headTree: Tree {
         get throws {
-            let treePointer = try GitError.checkAndReturn(
-                apiName: "git_revparse_single",
-                closure: { pointer in
-                    git_revparse_single(&pointer, repositoryPointer, "HEAD^{tree}")
-                }
-            )
+            let treePointer = try ExecReturn("git_revparse_single") { pointer in
+                git_revparse_single(&pointer, repo, "HEAD^{tree}")
+            }
             return Tree(treePointer)
         }
     }
@@ -1260,32 +1029,23 @@ public final class Repository {
     }
 
     public func lookupTree(for objectID: ObjectID) throws -> Tree {
-        let treePointer = try GitError.checkAndReturn(
-            apiName: "git_tree_lookup",
-            closure: { pointer in
-                var oid = objectID.oid
-                return git_tree_lookup(&pointer, repositoryPointer, &oid)
-            }
-        )
+        let treePointer = try ExecReturn("git_tree_lookup") { pointer in
+            var oid = objectID.oid
+            return git_tree_lookup(&pointer, repo, &oid)
+        }
         return Tree(treePointer)
     }
 
     public func lookupTree(for refspec: String) throws -> Tree {
-        let reference = try GitError.checkAndReturn(
-            apiName: "git_reference_dwim",
-            closure: { pointer in
-                git_reference_dwim(&pointer, repositoryPointer, refspec)
-            }
-        )
+        let reference = try ExecReturn("git_reference_dwim") { pointer in
+            git_reference_dwim(&pointer, repo, refspec)
+        }
         defer {
             git_reference_free(reference)
         }
-        let treePointer = try GitError.checkAndReturn(
-            apiName: "git_reference_peel",
-            closure: { pointer in
-                git_reference_peel(&pointer, reference, GIT_OBJECT_TREE)
-            }
-        )
+        let treePointer = try ExecReturn("git_reference_peel") { pointer in
+            git_reference_peel(&pointer, reference, GIT_OBJECT_TREE)
+        }
         return Tree(treePointer)
     }
 
@@ -1297,27 +1057,17 @@ public final class Repository {
 
     public typealias TreeWalkCallback = (TreeEntry) -> TreeWalkResult
 
-    public func treeWalk(
-        tree: Tree,
-        traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE,
-        callback: @escaping TreeWalkCallback
-    ) throws {
+    public func treeWalk(tree: Tree, traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE, callback: @escaping TreeWalkCallback) throws {
         var callback = callback
         try withUnsafeMutablePointer(to: &callback) { callbackPointer in
-            try GitError.check(
-                apiName: "git_tree_walk",
-                closure: {
-                    git_tree_walk(
-                        tree.treePointer, traversalMode, treeWalkCallback, callbackPointer)
-                }
-            )
+            try Exec("git_tree_walk") {
+                git_tree_walk(
+                    tree.tree, traversalMode, treeWalkCallback, callbackPointer)
+            }
         }
     }
 
-    public func treeWalk(
-        tree: Tree? = nil,
-        traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE
-    ) -> AsyncThrowingStream<TreeEntry, Error> {
+    public func treeWalk(tree: Tree? = nil, traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE) -> AsyncThrowingStream<TreeEntry, Error> {
         AsyncThrowingStream { continuation in
             do {
                 let originTree = try (tree ?? (try headTree))
@@ -1338,22 +1088,16 @@ public final class Repository {
 
     public func lookupCommit(for id: ObjectID) throws -> Commit {
         var objectID = id.oid
-        let commitPointer = try GitError.checkAndReturn(
-            apiName: "git_commit_lookup",
-            closure: { pointer in
-                git_commit_lookup(&pointer, repositoryPointer, &objectID)
-            }
-        )
+        let commitPointer = try ExecReturn("git_commit_lookup") { pointer in
+            git_commit_lookup(&pointer, repo, &objectID)
+        }
         return Commit(commitPointer)
     }
 
     public func add(_ pathspec: String = "*") throws {
-        let indexPointer = try GitError.checkAndReturn(
-            apiName: "git_repository_index",
-            closure: { pointer in
-                git_repository_index(&pointer, repositoryPointer)
-            }
-        )
+        let indexPointer = try ExecReturn("git_repository_index") { pointer in
+            git_repository_index(&pointer, repo)
+        }
         defer {
             git_index_free(indexPointer)
         }
@@ -1362,47 +1106,35 @@ public final class Repository {
             git_strarray(strings: $0, count: 1)
         }
 
-        try GitError.check(
-            apiName: "git_index_add_all",
-            closure: {
-                git_index_add_all(indexPointer, &paths, 0, nil, nil)
-            }
-        )
-        try GitError.check(
-            apiName: "git_index_write",
-            closure: {
-                git_index_write(indexPointer)
-            }
-        )
+        try Exec("git_index_add_all") {
+            git_index_add_all(indexPointer, &paths, 0, nil, nil)
+        }
+        try Exec("git_index_write") {
+            git_index_write(indexPointer)
+        }
     }
 
     @discardableResult
     public func commit(message: String, signature: Signature) throws -> ObjectID {
-        let indexPointer = try GitError.checkAndReturn(
-            apiName: "git_repository_index",
-            closure: { pointer in
-                git_repository_index(&pointer, repositoryPointer)
-            }
-        )
+        let indexPointer = try ExecReturn("git_repository_index") { pointer in
+            git_repository_index(&pointer, repo)
+        }
         defer {
             git_index_free(indexPointer)
         }
 
         var parentCommitPointer: OpaquePointer?
         var referencePointer: OpaquePointer?
-        try GitError.check(
-            apiName: "git_revparse_ext",
-            closure: {
-                let result = git_revparse_ext(
-                    &parentCommitPointer, &referencePointer, repositoryPointer, "HEAD")
-                // Remap "ENOTFOUND" to "OK" because things work just fine if there is no HEAD commit; it means we're making
-                // the first commit in the repo.
-                if result == GIT_ENOTFOUND.rawValue {
-                    return GIT_OK.rawValue
-                }
-                return result
+        try Exec("git_revparse_ext") {
+            let result = git_revparse_ext(
+                &parentCommitPointer, &referencePointer, repo, "HEAD")
+            // Remap "ENOTFOUND" to "OK" because things work just fine if there is no HEAD commit; it means we're making
+            // the first commit in the repo.
+            if result == GIT_ENOTFOUND.rawValue {
+                return GIT_OK.rawValue
             }
-        )
+            return result
+        }
         if referencePointer != nil {
             git_reference_free(referencePointer)
         }
@@ -1413,31 +1145,25 @@ public final class Repository {
         }
 
         // Take the contents of the index & write it to the object database as a tree.
-        let treeOID = try GitError.checkAndReturnOID(
-            apiName: "git_index_write_tree",
-            closure: { oid in
-                git_index_write_tree(&oid, indexPointer)
-            }
-        )
+        let treeOID = try ExecReturnID("git_index_write_tree") { oid in
+            git_index_write_tree(&oid, indexPointer)
+        }
         let tree = try lookupTree(for: treeOID)
 
-        return try GitError.checkAndReturnOID(
-            apiName: "git_commit_create",
-            closure: { commitOID in
-                git_commit_create(
-                    &commitOID,
-                    repositoryPointer,
-                    "HEAD",
-                    signature.signature,
-                    signature.signature,
-                    nil,
-                    message,
-                    tree.treePointer,
-                    parentCommitPointer != nil ? 1 : 0,
-                    &parentCommitPointer
-                )
-            }
-        )
+        return try ExecReturnID("git_commit_create") { commitOID in
+            git_commit_create(
+                &commitOID,
+                repo,
+                "HEAD",
+                signature.signature,
+                signature.signature,
+                nil,
+                message,
+                tree.tree,
+                parentCommitPointer != nil ? 1 : 0,
+                &parentCommitPointer
+            )
+        }
     }
 
     /// Pushes refspecs to a remote, returning an `AsyncThrowingStream` that you can use to track progress.
@@ -1446,23 +1172,16 @@ public final class Repository {
     ///   - refspecs: The references to push.
     ///   - credentials: The credentials to use for connect to the remote.
     /// - Returns: An `AsyncThrowingStream` that emits ``PushProgress`` structs for tracking progress.
-    public func pushProgress(
-        remoteName: String, refspecs: [String], credentials: Credentials = .default
-    )
-        -> AsyncThrowingStream<PushProgress, Error>
-    {
+    public func pushProgress(remoteName: String, refspecs: [String], credentials: Credentials = .default) -> AsyncThrowingStream<PushProgress, Error> {
         let pushOptions = PushOptions(credentials: credentials)
         let stream = AsyncThrowingStream<PushProgress, Error> { continuation in
             pushOptions.progressCallback = { progress in
                 continuation.yield(progress)
             }
             do {
-                let remotePointer = try GitError.checkAndReturn(
-                    apiName: "git_remote_lookup",
-                    closure: { pointer in
-                        git_remote_lookup(&pointer, repositoryPointer, remoteName)
-                    }
-                )
+                let remotePointer = try ExecReturn("git_remote_lookup") { pointer in
+                    git_remote_lookup(&pointer, repo, remoteName)
+                }
                 defer {
                     git_remote_free(remotePointer)
                 }
@@ -1474,14 +1193,11 @@ public final class Repository {
                 let pointerCount = refspecPointers.count
                 try refspecPointers.withUnsafeMutableBufferPointer { foo in
                     var paths = git_strarray(strings: foo.baseAddress, count: pointerCount)
-                    try GitError.check(
-                        apiName: "git_remote_push",
-                        closure: {
-                            pushOptions.withOptions { options in
-                                git_remote_push(remotePointer, &paths, &options)
-                            }
+                    try Exec("git_remote_push") {
+                        pushOptions.withOptions { options in
+                            git_remote_push(remotePointer, &paths, &options)
                         }
-                    )
+                    }
                 }
                 continuation.finish()
                 logger.info("Done pushing")
@@ -1492,12 +1208,8 @@ public final class Repository {
         return stream
     }
 
-    public func push(remoteName: String, refspecs: [String], credentials: Credentials = .default)
-        async throws
-    {
-        for try await _ in pushProgress(
-            remoteName: remoteName, refspecs: refspecs, credentials: credentials)
-        {}
+    public func push(remoteName: String, refspecs: [String], credentials: Credentials = .default) async throws {
+        for try await _ in pushProgress(remoteName: remoteName, refspecs: refspecs, credentials: credentials) {}
     }
 
     /// Enumerates the commits for a reference.
@@ -1506,41 +1218,29 @@ public final class Repository {
     ///   - callback: A callback that receives each commit. Return `false` to stop enumerating commits.
     public func enumerateCommits(referenceShorthand: String, callback: (Commit) -> Bool) throws {
         // TODO: Per the documentation, we should reuse this walker.
-        let revwalkPointer = try GitError.checkAndReturn(
-            apiName: "git_revwalk_new",
-            closure: { pointer in
-                git_revwalk_new(&pointer, repositoryPointer)
-            }
-        )
+        let revwalkPointer = try ExecReturn("git_revwalk_new") { pointer in
+            git_revwalk_new(&pointer, repo)
+        }
         defer {
             git_revwalk_free(revwalkPointer)
         }
-        let commitPointer = try GitError.checkAndReturn(
-            apiName: "git_revparse_single",
-            closure: { commitPointer in
-                git_revparse_single(&commitPointer, repositoryPointer, referenceShorthand)
-            }
-        )
+        let commitPointer = try ExecReturn("git_revparse_single") { commitPointer in
+            git_revparse_single(&commitPointer, repo, referenceShorthand)
+        }
         defer {
             git_commit_free(commitPointer)
         }
-        try GitError.check(
-            apiName: "git_revwalk_push",
-            closure: {
-                let oid = git_commit_id(commitPointer)
-                return git_revwalk_push(revwalkPointer, oid)
-            }
-        )
+        try Exec("git_revwalk_push") {
+            let oid = git_commit_id(commitPointer)
+            return git_revwalk_push(revwalkPointer, oid)
+        }
         var oid = git_oid()
         var walkResult = git_revwalk_next(&oid, revwalkPointer)
         var stop = false
         while walkResult == 0, !stop {
-            let historyCommitPointer = try GitError.checkAndReturn(
-                apiName: "git_commit_lookup",
-                closure: { historyCommitPointer in
-                    git_commit_lookup(&historyCommitPointer, repositoryPointer, &oid)
-                }
-            )
+            let historyCommitPointer = try ExecReturn("git_commit_lookup") { historyCommitPointer in
+                git_commit_lookup(&historyCommitPointer, repo, &oid)
+            }
             stop = !callback(Commit(historyCommitPointer))
             walkResult = git_revwalk_next(&oid, revwalkPointer)
         }
@@ -1590,7 +1290,7 @@ public final class Repository {
     private func isCommit(_ commit: Commit, reachableFrom oids: [git_oid]) throws -> Bool {
         var commitOid = commit.objectID.oid
         let isReachable = git_graph_reachable_from_any(
-            repositoryPointer, &commitOid, oids, oids.count)
+            repo, &commitOid, oids, oids.count)
         switch isReachable {
         case 1:
             return true
@@ -1602,27 +1302,25 @@ public final class Repository {
     }
 
     public func diff(_ oldTree: Tree?, _ newTree: Tree?) throws -> Diff {
-        let diffPointer = try GitError.checkAndReturn(
-            apiName: "git_diff_tree_to_tree",
-            closure: { pointer in
-                git_diff_tree_to_tree(
-                    &pointer, repositoryPointer, oldTree?.treePointer, newTree?.treePointer, nil)
-            }
-        )
+        let diffPointer = try ExecReturn("git_diff_tree_to_tree") { pointer in
+            git_diff_tree_to_tree(
+                &pointer, repo, oldTree?.tree, newTree?.tree, nil)
+        }
         return Diff(diffPointer)
     }
 }
 
 public enum FetchError: Error {
+
     /// There was an unexpected error: The fetch stream did not complete.
     case unexpectedError
 }
 
 extension Repository.FetchProgressStream {
-    @discardableResult
+
     /// Fetch the entire contents of the stream and return the default branch name for the remote.
     /// - returns: The reference name for default branch for the remote.
-    public func fetchAll() async throws -> String? {
+    @discardableResult public func fetchAll() async throws -> String? {
         for try await progress in self {
             switch progress {
             case .completed(let branch):
@@ -1636,17 +1334,14 @@ extension Repository.FetchProgressStream {
 }
 
 extension AsyncThrowingStream {
+
     /// Waits until the given stream completes.
     public func complete() async throws {
         for try await _ in self {}
     }
 }
 
-private func treeWalkCallback(
-    root: UnsafePointer<Int8>?,
-    entryPointer: OpaquePointer?,
-    payload: UnsafeMutableRawPointer?
-) -> Int32 {
+private func treeWalkCallback(root: UnsafePointer<Int8>?, entryPointer: OpaquePointer?, payload: UnsafeMutableRawPointer?) -> Int32 {
     guard let payload = payload, let entryPointer = entryPointer, let root = root else {
         return Repository.TreeWalkResult.continue.rawValue
     }

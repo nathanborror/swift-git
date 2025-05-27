@@ -10,7 +10,6 @@ extension Index {
         case theirs = 3
     }
 
-    /// A Swift wrapper around `git_index_entry`
     public struct Entry {
         public init(_ gitEntry: git_index_entry) {
             self.gitEntry = gitEntry

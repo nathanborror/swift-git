@@ -80,9 +80,9 @@ struct RepositoryTests {
         #expect(FileManager.default.fileExists(atPath: expectedFilePath))
     }
 
-    @Test("Checkout Remote")
-    func testCheckoutRemote() async throws {
-        let location = FileManager.default.temporaryDirectory.appendingPathComponent("testCheckoutRemote")
+    @Test("Add & Remove Remote")
+    func testAddAndRemoveRemote() async throws {
+        let location = FileManager.default.temporaryDirectory.appendingPathComponent("testAddAndRemoveRemote")
         defer {
             try? FileManager.default.removeItem(at: location)
         }
@@ -94,11 +94,12 @@ struct RepositoryTests {
         }
         try repository.checkNormalState()
         let statusEntries = try repository.statusEntries
-        print(statusEntries)
         #expect(statusEntries.isEmpty)
+
         let expectedFilePath = repository.workingDirectoryURL!.appendingPathComponent("Package.swift").path
-        print("Looking for file at \(expectedFilePath)")
         #expect(FileManager.default.fileExists(atPath: expectedFilePath))
+
+        try repository.deleteRemote("origin")
     }
 
     @Test("Fetch Non-Conflicting Changes")

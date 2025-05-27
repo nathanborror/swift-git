@@ -49,13 +49,10 @@ public final class Commit {
     /// The tree pointed to by a commit.
     public var tree: Tree {
         get throws {
-            let treePointer = try GitError.checkAndReturn(
-                apiName: "git_commit_tree",
-                closure: { pointer in
-                    git_commit_tree(&pointer, commit)
-                }
-            )
-            return Tree(treePointer)
+            let tree = try ExecReturn("git_commit_tree") { pointer in
+                git_commit_tree(&pointer, commit)
+            }
+            return Tree(tree)
         }
     }
 
@@ -71,12 +68,12 @@ public final class Commit {
     /// The set of all paths changed by this commit.
     public var changedPaths: Set<String> {
         get throws {
-            let repository = Repository(repositoryPointer: git_commit_owner(commit), isOwner: false)
+            let repo = Repository(repo: git_commit_owner(commit), isOwner: false)
             var changedPaths: Set<String> = []
             let newTree = try tree
             for parent in parents {
                 let oldTree = try parent.tree
-                let diff = try repository.diff(oldTree, newTree)
+                let diff = try repo.diff(oldTree, newTree)
                 for delta in diff {
                     changedPaths.insert(delta.oldFile.path)
                     changedPaths.insert(delta.newFile.path)

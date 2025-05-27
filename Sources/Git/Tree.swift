@@ -5,31 +5,28 @@ import CGit2
 ///
 /// A `Tree` is a random-access collection of ``TreeEntry`` structs.
 public final class Tree {
-    init(_ treePointer: OpaquePointer) {
-        self.treePointer = treePointer
-        self.entryCount = git_tree_entrycount(treePointer)
+    init(_ tree: OpaquePointer) {
+        self.tree = tree
+        self.entryCount = git_tree_entrycount(tree)
     }
 
     deinit {
-        git_object_free(treePointer)
+        git_object_free(tree)
     }
 
-    let treePointer: OpaquePointer
+    let tree: OpaquePointer
     let entryCount: Int
 
     /// Retrieve a tree entry contained in a tree or in any of its subtrees, given its relative path.
     public subscript(path path: String) -> TreeEntry? {
         do {
-            let entryPointer = try GitError.checkAndReturn(
-                apiName: "git_tree_entry_bypath",
-                closure: { pointer in
-                    git_tree_entry_bypath(&pointer, treePointer, path)
-                }
-            )
-            defer {
-                git_tree_entry_free(entryPointer)
+            let entry = try ExecReturn("git_tree_entry_bypath") { pointer in
+                git_tree_entry_bypath(&pointer, tree, path)
             }
-            return TreeEntry(entryPointer)
+            defer {
+                git_tree_entry_free(entry)
+            }
+            return TreeEntry(entry)
         } catch {
             return nil
         }
@@ -44,6 +41,6 @@ extension Tree: RandomAccessCollection {
     public var count: Int { entryCount }
 
     public subscript(position: Int) -> TreeEntry {
-        TreeEntry(git_tree_entry_byindex(treePointer, position))
+        TreeEntry(git_tree_entry_byindex(tree, position))
     }
 }
