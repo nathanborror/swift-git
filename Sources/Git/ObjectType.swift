@@ -2,28 +2,34 @@ import Foundation
 import CGit2
 
 /// Mirrors `git_object_t` to be a little more swift-y
-public enum ObjectType: Int32, Sendable {
-    /// Object can be any of the following
+public enum ObjectType: Int32, Sendable, CustomStringConvertible {
     case any = -2
-
-    /// Object is invalid
     case invalid = -1
-
-    /// A commit object
     case commit = 1
-
-    /// A tree (directory listing) object
     case tree = 2
-
-    /// A file revision object
     case blob = 3
-
-    /// An annotated tag object
     case tag = 4
+    case deltaOffset = 6
+    case deltaRef = 7
 
-    /// A delta, base is given by its offset
-    case ofsDelta = 6
-
-    /// A delta, base is given by object id
-    case refDelta = 7
+    public var description: String {
+        switch self {
+        case .any:
+            "Object can be any of the types"
+        case .invalid:
+            "Object is invalid"
+        case .commit:
+            "Commit object"
+        case .tree:
+            "Tree (directory listing) object"
+        case .blob:
+            "File revision object"
+        case .tag:
+            "Annotated tag object"
+        case .deltaOffset:
+            "Delta, base is given by its offset"
+        case .deltaRef:
+            "Delta, base is given by object id"
+        }
+    }
 }

@@ -1,8 +1,9 @@
 import Foundation
 import CGit2
 
-/// Make a `git_oid` more Swifty
 public struct ObjectID: CustomStringConvertible, Hashable, Sendable {
+    var oid: git_oid
+
     init(_ oid: git_oid) {
         self.oid = oid
     }
@@ -13,8 +14,6 @@ public struct ObjectID: CustomStringConvertible, Hashable, Sendable {
         }
         self.init(oid)
     }
-
-    var oid: git_oid
 
     public var description: String {
         let length = Int(GIT_OID_RAWSZ) * 2
@@ -27,7 +26,6 @@ public struct ObjectID: CustomStringConvertible, Hashable, Sendable {
     }
 
     public func hash(into hasher: inout Hasher) {
-        // so tedious...
         hasher.combine(oid.id.0)
         hasher.combine(oid.id.1)
         hasher.combine(oid.id.2)

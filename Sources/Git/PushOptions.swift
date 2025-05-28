@@ -12,11 +12,6 @@ public enum PushProgress: Equatable, Sendable {
 final class PushOptions: CustomStringConvertible {
     typealias ProgressBlock = (PushProgress) -> Void
 
-    init(credentials: Credentials = .default, progressCallback: ProgressBlock? = nil) {
-        self.credentials = credentials
-        self.progressCallback = progressCallback
-    }
-
     var credentials: Credentials
     var progressCallback: ProgressBlock?
 
@@ -24,12 +19,13 @@ final class PushOptions: CustomStringConvertible {
         "FetchOptions Credentials = \(credentials), progressCallback \(progressCallback != nil ? "is not nil" : "is nil")"
     }
 
-    func toPointer() -> UnsafeMutableRawPointer {
-        Unmanaged.passUnretained(self).toOpaque()
+    init(credentials: Credentials = .default, progressCallback: ProgressBlock? = nil) {
+        self.credentials = credentials
+        self.progressCallback = progressCallback
     }
 
-    static func fromPointer(_ pointer: UnsafeMutableRawPointer) -> PushOptions {
-        Unmanaged<PushOptions>.fromOpaque(UnsafeRawPointer(pointer)).takeUnretainedValue()
+    func toPointer() -> UnsafeMutableRawPointer {
+        Unmanaged.passUnretained(self).toOpaque()
     }
 
     func withOptions<T>(closure: (inout git_push_options) throws -> T) rethrows -> T {
@@ -43,11 +39,13 @@ final class PushOptions: CustomStringConvertible {
         options.callbacks.credentials = credentialsCallback
         return try closure(&options)
     }
+
+    static func fromPointer(_ pointer: UnsafeMutableRawPointer) -> PushOptions {
+        Unmanaged<PushOptions>.fromOpaque(UnsafeRawPointer(pointer)).takeUnretainedValue()
+    }
 }
 
-private func sidebandProgress(
-    message: UnsafePointer<Int8>?, length: Int32, payload: UnsafeMutableRawPointer?
-) -> Int32 {
+private func sidebandProgress(message: UnsafePointer<Int8>?, length: Int32, payload: UnsafeMutableRawPointer?) -> Int32 {
     guard let payload = payload else {
         return 0
     }
@@ -59,15 +57,17 @@ private func sidebandProgress(
     return 0
 }
 
-private func pushProgress(
-    current: UInt32, total: UInt32, bytes: Int, payload: UnsafeMutableRawPointer?
-) -> Int32 {
+private func pushProgress(current: UInt32, total: UInt32, bytes: Int, payload: UnsafeMutableRawPointer?) -> Int32 {
     guard let payload = payload else {
         return 0
     }
-
     let pushOptions = PushOptions.fromPointer(payload)
     pushOptions.progressCallback?(
-        .push(current: Int(current), total: Int(total), bytes: Int(bytes)))
+        .push(
+            current: Int(current),
+            total: Int(total),
+            bytes: Int(bytes)
+        )
+    )
     return 0
 }

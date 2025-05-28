@@ -1024,7 +1024,7 @@ public final class Repository {
     }
 
     /// Returns a `Tree` associated with a specific `Entry`.
-    public func lookupTree(for entry: TreeEntry) throws -> Tree {
+    public func lookupTree(for entry: Tree.Entry) throws -> Tree {
         try lookupTree(for: entry.objectID)
     }
 
@@ -1055,7 +1055,7 @@ public final class Repository {
         case done = -1
     }
 
-    public typealias TreeWalkCallback = (TreeEntry) -> TreeWalkResult
+    public typealias TreeWalkCallback = (Tree.Entry) -> TreeWalkResult
 
     public func treeWalk(tree: Tree, traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE, callback: @escaping TreeWalkCallback) throws {
         var callback = callback
@@ -1067,7 +1067,7 @@ public final class Repository {
         }
     }
 
-    public func treeWalk(tree: Tree? = nil, traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE) -> AsyncThrowingStream<TreeEntry, Error> {
+    public func treeWalk(tree: Tree? = nil, traversalMode: git_treewalk_mode = GIT_TREEWALK_PRE) -> AsyncThrowingStream<Tree.Entry, Error> {
         AsyncThrowingStream { continuation in
             do {
                 let originTree = try (tree ?? (try headTree))
@@ -1346,6 +1346,6 @@ private func treeWalkCallback(root: UnsafePointer<Int8>?, entryPointer: OpaquePo
         return Repository.TreeWalkResult.continue.rawValue
     }
     let callbackPointer = payload.assumingMemoryBound(to: Repository.TreeWalkCallback.self)
-    let entry = TreeEntry(entryPointer, root: String(cString: root))
+    let entry = Tree.Entry(entryPointer, root: String(cString: root))
     return callbackPointer.pointee(entry).rawValue
 }

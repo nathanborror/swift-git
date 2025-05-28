@@ -27,14 +27,6 @@ public struct Connection: Codable, Equatable, Sendable {
         }
     }
 
-    public init(remote: URL? = nil, username: String = "", email: String = "", password: String = "", isReadOnly: Bool = false) {
-        self.remote = remote
-        self.username = username
-        self.email = email
-        self.password = password
-        self.isReadOnly = isReadOnly
-    }
-
     /// How we are supposed to connect to the server
     public var connectionType = AuthenticationType.usernamePassword
 
@@ -66,6 +58,22 @@ public struct Connection: Codable, Equatable, Sendable {
         isConnectionInformationValid && isPersonalInformationValid
     }
 
+    public var credentials: Credentials {
+        switch connectionType {
+        case .usernamePassword:
+            .plaintext(username: username, password: password)
+        case .ssh:
+            .sshMemory(
+                username: "git",
+                publicKey: sshKeyPair.publicKey,
+                privateKey: sshKeyPair.privateKey,
+                passphrase: password
+            )
+        case .none:
+            .default
+        }
+    }
+
     private var isPersonalInformationValid: Bool {
         // EITHER we are read-only (and don't need username / email) OR we need both username & email.
         isReadOnly || (!username.isEmpty && !email.isEmpty)
@@ -82,20 +90,12 @@ public struct Connection: Codable, Equatable, Sendable {
         }
     }
 
-    public var credentials: Credentials {
-        switch connectionType {
-        case .usernamePassword:
-            .plaintext(username: username, password: password)
-        case .ssh:
-            .sshMemory(
-                username: "git",
-                publicKey: sshKeyPair.publicKey,
-                privateKey: sshKeyPair.privateKey,
-                passphrase: password
-            )
-        case .none:
-            .default
-        }
+    public init(remote: URL? = nil, username: String = "", email: String = "", password: String = "", isReadOnly: Bool = false) {
+        self.remote = remote
+        self.username = username
+        self.email = email
+        self.password = password
+        self.isReadOnly = isReadOnly
     }
 
     public func makeSignature(time: Date, timeZone: TimeZone = .current) throws -> Signature {

@@ -52,10 +52,6 @@ final class FetchOptions: CustomStringConvertible {
         Unmanaged.passUnretained(self).toOpaque()
     }
 
-    static func fromPointer(_ pointer: UnsafeMutableRawPointer) -> FetchOptions {
-        Unmanaged<FetchOptions>.fromOpaque(UnsafeRawPointer(pointer)).takeUnretainedValue()
-    }
-
     func withOptions<T>(closure: (inout git_fetch_options) throws -> T) rethrows -> T {
         var options = git_fetch_options()
         git_fetch_options_init(&options, UInt32(GIT_FETCH_OPTIONS_VERSION))
@@ -74,17 +70,16 @@ final class FetchOptions: CustomStringConvertible {
         options.callbacks.credentials = credentialsCallback
         return try closure(&options)
     }
+
+    static func fromPointer(_ pointer: UnsafeMutableRawPointer) -> FetchOptions {
+        Unmanaged<FetchOptions>.fromOpaque(UnsafeRawPointer(pointer)).takeUnretainedValue()
+    }
 }
 
-private func fetchProgress(
-    progressPointer: UnsafePointer<git_indexer_progress>?, payload: UnsafeMutableRawPointer?
-)
-    -> Int32
-{
+private func fetchProgress(progressPointer: UnsafePointer<git_indexer_progress>?, payload: UnsafeMutableRawPointer?) -> Int32 {
     guard let payload = payload else {
         return 0
     }
-
     let fetchOptions = FetchOptions.fromPointer(payload)
     if let progress = progressPointer?.pointee {
         fetchOptions.progressCallback?(FetchProgress(progress))

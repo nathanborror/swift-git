@@ -188,9 +188,7 @@ struct RepositoryTests {
     @Test("Tree Enumeration")
     func testTreeEnumeration() async throws {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testTreeEnumeration")
-        defer {
-            try? FileManager.default.removeItem(at: location)
-        }
+        defer { try? FileManager.default.removeItem(at: location) }
         let repository = try await Repository.clone(
             from: URL(string: "https://github.com/bdewey/SpacedRepetitionScheduler")!,
             to: location
@@ -204,9 +202,7 @@ struct RepositoryTests {
     @Test("Get Data From Entry")
     func testGetDataFromEntry() async throws {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testGetDataFromEntry")
-        defer {
-            try? FileManager.default.removeItem(at: location)
-        }
+        defer { try? FileManager.default.removeItem(at: location) }
         let repository = try await Repository.clone(
             from: URL(string: "https://github.com/bdewey/SpacedRepetitionScheduler")!,
             to: location
