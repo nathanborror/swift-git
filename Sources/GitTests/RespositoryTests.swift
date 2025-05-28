@@ -55,6 +55,21 @@ struct RepositoryTests {
         print("Cloned to \(repository.workingDirectoryURL?.absoluteString ?? "nil")")
     }
 
+    @Test("Basic Shallow Clone")
+    func testBasicShallowClone() async throws {
+        let location = FileManager.default.temporaryDirectory.appendingPathComponent("testBasicShallowClone")
+        defer {
+            try? FileManager.default.removeItem(at: location)
+        }
+        let repository = try await Repository.clone(
+            from: URL(string: "https://github.com/bdewey/jubliant-happiness")!,
+            to: location,
+            depth: 1
+        )
+        let commits = try repository.allCommits(revspec: "HEAD")
+        #expect(commits.count == 1)
+    }
+
     @Test("Fetch Fast Forward")
     func testFetchFastForward() async throws {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testFetchFastForward")

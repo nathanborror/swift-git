@@ -102,15 +102,9 @@ public final class Repository {
         }
     }
 
-    /// Clones a repository.
-    /// - Parameters:
-    ///   - remoteURL: The URL to the repository to clone.
-    ///   - localURL: The URL of the local destination for the repository.
-    ///   - credentials: Credentials to use to connect to `remoteURL`
-    /// - Returns: A ``Repository`` representing the new local copy.
-    public static func clone(from remoteURL: URL, to localURL: URL, credentials: Credentials = .default) async throws -> Repository {
+    public static func clone(from remoteURL: URL, to localURL: URL, depth: Int = 0, credentials: Credentials = .default) async throws -> Repository {
         var repository: Repository?
-        for try await progress in cloneProgress(from: remoteURL, to: localURL, credentials: credentials) {
+        for try await progress in cloneProgress(from: remoteURL, to: localURL, depth: depth, credentials: credentials) {
             switch progress {
             case .completed(let repo):
                 repository = repo
@@ -123,7 +117,7 @@ public final class Repository {
 
     /// Clones a repository, reporting progress.
     /// - returns: An `AsyncThrowingStream` that returns intermediate ``FetchProgress`` while fetching and the final ``Repository`` upon completion.
-    public static func cloneProgress(from remoteURL: URL, to localURL: URL, credentials: Credentials = .default) -> AsyncThrowingStream<Progress<FetchProgress, Repository>, Error> {
+    public static func cloneProgress(from remoteURL: URL, to localURL: URL, depth: Int = 0, credentials: Credentials = .default) -> AsyncThrowingStream<Progress<FetchProgress, Repository>, Error> {
         AsyncThrowingStream<Progress<FetchProgress, Repository>, Error> { continuation in
             let progressCallback: FetchProgressBlock = { progress in
                 continuation.yield(.progress(progress))
@@ -131,6 +125,7 @@ public final class Repository {
             let cloneOptions = CloneOptions(
                 fetchOptions: FetchOptions(
                     credentials: credentials,
+                    depth: depth,
                     progressCallback: progressCallback
                 )
             )
@@ -450,10 +445,11 @@ public final class Repository {
     ///   - remote: The remote to fetch
     ///   - credentials: Credentials to use for the fetch.
     /// - returns: An AsyncThrowingStream that emits the fetch progress. The fetch is not done until this stream finishes yielding values.
-    public func fetchProgress(remote: String, pruneOption: FetchPruneOption = .unspecified, credentials: Credentials = .default) -> FetchProgressStream {
+    public func fetchProgress(remote: String, pruneOption: FetchPruneOption = .unspecified, depth: Int = 0, credentials: Credentials = .default) -> FetchProgressStream {
         let fetchOptions = FetchOptions(
             credentials: credentials,
             pruneOption: pruneOption,
+            depth: depth,
             progressCallback: nil
         )
         let resultStream = FetchProgressStream { continuation in

@@ -30,22 +30,21 @@ public enum FetchPruneOption: Sendable {
 }
 
 final class FetchOptions: CustomStringConvertible {
-    init(
-        credentials: Credentials = .default,
-        pruneOption: FetchPruneOption = .unspecified,
-        progressCallback: Repository.FetchProgressBlock? = nil
-    ) {
-        self.credentials = credentials
-        self.pruneOption = pruneOption
-        self.progressCallback = progressCallback
-    }
 
     var credentials: Credentials
     var pruneOption: FetchPruneOption
+    var depth: Int
     var progressCallback: Repository.FetchProgressBlock?
 
     var description: String {
         "FetchOptions Credentials = \(credentials), progressCallback \(progressCallback != nil ? "is not nil" : "is nil")"
+    }
+
+    init(credentials: Credentials = .default, pruneOption: FetchPruneOption = .unspecified, depth: Int, progressCallback: Repository.FetchProgressBlock? = nil) {
+        self.credentials = credentials
+        self.pruneOption = pruneOption
+        self.depth = depth
+        self.progressCallback = progressCallback
     }
 
     func toPointer() -> UnsafeMutableRawPointer {
@@ -63,6 +62,7 @@ final class FetchOptions: CustomStringConvertible {
         case .noPrune:
             options.prune = GIT_FETCH_NO_PRUNE
         }
+        options.depth = Int32(depth)
         if progressCallback != nil {
             options.callbacks.transfer_progress = fetchProgress
         }
