@@ -312,4 +312,21 @@ struct RepositoryTests {
         #expect(nothingOnServer.ahead == 2)
         #expect(nothingOnServer.behind == 0)
     }
+
+    @Test("Private Clone")
+    func testPrivateBasicClone() async throws {
+        let location = FileManager.default.temporaryDirectory.appendingPathComponent("testPrivateBasicClone")
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        // Github Personal Access Token (read-only access)
+        let username = "nathanborror"
+        let token = "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"
+
+        let repository = try await Repository.clone(
+            from: URL(string: "https://github.com/nathanborror/swift-git.git")!,
+            to: location,
+            credentials: .plaintext(username: username, password: token)
+        )
+        #expect(repository.workingDirectoryURL != nil)
+    }
 }
