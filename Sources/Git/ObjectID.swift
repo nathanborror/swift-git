@@ -2,50 +2,50 @@ import Foundation
 import CGit2
 
 public struct ObjectID: CustomStringConvertible, Hashable, Sendable {
-    var oid: git_oid
+    var id: git_oid
 
-    init(_ oid: git_oid) {
-        self.oid = oid
+    init(_ id: git_oid) {
+        self.id = id
     }
 
-    init?(_ oidPointer: UnsafePointer<git_oid>?) {
-        guard let oid = oidPointer?.pointee else {
+    init?(_ idPointer: UnsafePointer<git_oid>?) {
+        guard let id = idPointer?.pointee else {
             return nil
         }
-        self.init(oid)
+        self.init(id)
     }
 
     public var description: String {
         let length = Int(GIT_OID_RAWSZ) * 2
         let string = UnsafeMutablePointer<Int8>.allocate(capacity: length)
-        var oid = oid
-        git_oid_fmt(string, &oid)
+        var id = id
+        git_oid_fmt(string, &id)
 
         let data = Data(bytes: string, count: length)
         return String(data: data, encoding: .ascii) ?? "<error>"
     }
 
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(oid.id.0)
-        hasher.combine(oid.id.1)
-        hasher.combine(oid.id.2)
-        hasher.combine(oid.id.3)
-        hasher.combine(oid.id.4)
-        hasher.combine(oid.id.5)
-        hasher.combine(oid.id.6)
-        hasher.combine(oid.id.7)
-        hasher.combine(oid.id.8)
-        hasher.combine(oid.id.9)
-        hasher.combine(oid.id.10)
-        hasher.combine(oid.id.11)
-        hasher.combine(oid.id.12)
-        hasher.combine(oid.id.13)
-        hasher.combine(oid.id.14)
-        hasher.combine(oid.id.15)
-        hasher.combine(oid.id.16)
-        hasher.combine(oid.id.17)
-        hasher.combine(oid.id.18)
-        hasher.combine(oid.id.19)
+        hasher.combine(id.id.0)
+        hasher.combine(id.id.1)
+        hasher.combine(id.id.2)
+        hasher.combine(id.id.3)
+        hasher.combine(id.id.4)
+        hasher.combine(id.id.5)
+        hasher.combine(id.id.6)
+        hasher.combine(id.id.7)
+        hasher.combine(id.id.8)
+        hasher.combine(id.id.9)
+        hasher.combine(id.id.10)
+        hasher.combine(id.id.11)
+        hasher.combine(id.id.12)
+        hasher.combine(id.id.13)
+        hasher.combine(id.id.14)
+        hasher.combine(id.id.15)
+        hasher.combine(id.id.16)
+        hasher.combine(id.id.17)
+        hasher.combine(id.id.18)
+        hasher.combine(id.id.19)
     }
 }
 

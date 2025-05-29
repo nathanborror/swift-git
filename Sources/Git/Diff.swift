@@ -99,7 +99,7 @@ public final class Diff {
 
     /// Description of one side of a ``Delta``.
     public struct File {
-        /// The `git_oid` of the item. If the entry represents an absent side of a diff (e.g. the `old_file` of a `GIT_DELTA_ADDED` delta), then the oid will be zeroes.
+        /// The `git_oid` of the item. If the entry represents an absent side of a diff (e.g. the `old_file` of a `GIT_DELTA_ADDED` delta), then the id will be zeroes.
         public let id: ObjectID
 
         /// The path to the entry, relative to the working directory of the repository.

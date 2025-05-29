@@ -20,8 +20,8 @@ public final class Commit {
 
     /// The ``ObjectID`` for the commit entry in the repository.
     public var objectID: ObjectID {
-        let oid = git_commit_id(commit)
-        return ObjectID(oid)!
+        let id = git_commit_id(commit)
+        return ObjectID(id)!
     }
 
     /// The short “summary” of the git commit message.
@@ -66,22 +66,22 @@ public final class Commit {
     }
 
     /// The set of all paths changed by this commit.
-    public var changedPaths: Set<String> {
-        get throws {
-            let repo = Repository(repo: git_commit_owner(commit), isOwner: false)
-            var changedPaths: Set<String> = []
-            let newTree = try tree
-            for parent in parents {
-                let oldTree = try parent.tree
-                let diff = try repo.diff(oldTree, newTree)
-                for delta in diff {
-                    changedPaths.insert(delta.oldFile.path)
-                    changedPaths.insert(delta.newFile.path)
-                }
-            }
-            return changedPaths
-        }
-    }
+//    public var changedPaths: Set<String> {
+//        get throws {
+//            let repo = Repository(repo: git_commit_owner(commit), isOwner: false)
+//            var changedPaths: Set<String> = []
+//            let newTree = try tree
+//            for parent in parents {
+//                let oldTree = try parent.tree
+//                let diff = try repo.diff(oldTree, newTree)
+//                for delta in diff {
+//                    changedPaths.insert(delta.oldFile.path)
+//                    changedPaths.insert(delta.newFile.path)
+//                }
+//            }
+//            return changedPaths
+//        }
+//    }
 }
 
 extension Commit: CustomStringConvertible {

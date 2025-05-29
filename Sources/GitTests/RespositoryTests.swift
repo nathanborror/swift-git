@@ -14,7 +14,7 @@ struct RepositoryTests {
     @Test("Create Bare Repository")
     func testCreateBareRepository() async throws {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testCreateBareRepository.git")
-        let repository = try Repository(createAt: location, bare: true)
+        let repository = try Repository(create: location, bare: true)
         let url = repository.workingDirectoryURL
         #expect(url == nil)
     }
@@ -22,7 +22,7 @@ struct RepositoryTests {
     @Test("Create Non-Bare Repository")
     func testCreateNonBareRepository() async throws {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testCreateNonBareRepository.git")
-        let repository = try Repository(createAt: location, bare: false)
+        let repository = try Repository(create: location, bare: false)
         let url = repository.workingDirectoryURL
         #expect(url != nil)
     }
@@ -34,10 +34,10 @@ struct RepositoryTests {
             try? FileManager.default.removeItem(at: location)
         }
         #expect(throws: GitError.self) {
-            try Repository(openAt: location)
+            try Repository(open: location)
         }
-        _ = try Repository(createAt: location, bare: false)
-        let openedRepository = try Repository(openAt: location)
+        _ = try Repository(create: location, bare: false)
+        let openedRepository = try Repository(open: location)
         #expect(openedRepository.workingDirectoryURL?.standardizedFileURL == location.standardizedFileURL)
     }
 
@@ -48,8 +48,7 @@ struct RepositoryTests {
             try? FileManager.default.removeItem(at: location)
         }
         let repository = try await Repository.clone(
-            from: URL(string: "https://github.com/bdewey/jubliant-happiness")!,
-            to: location
+            URL(string: "https://github.com/bdewey/jubliant-happiness")!, into: location
         )
         #expect(repository.workingDirectoryURL != nil)
         print("Cloned to \(repository.workingDirectoryURL?.absoluteString ?? "nil")")
@@ -62,11 +61,9 @@ struct RepositoryTests {
             try? FileManager.default.removeItem(at: location)
         }
         let repository = try await Repository.clone(
-            from: URL(string: "https://github.com/bdewey/jubliant-happiness")!,
-            to: location,
-            depth: 1
+            URL(string: "https://github.com/bdewey/jubliant-happiness")!, into: location, depth: 1
         )
-        let commits = try repository.allCommits(revspec: "HEAD")
+        let commits = try await repository.commits("HEAD")
         #expect(commits.count == 1)
     }
 
@@ -76,18 +73,17 @@ struct RepositoryTests {
         defer {
             try? FileManager.default.removeItem(at: location)
         }
-        let repository = try Repository(createAt: location, bare: false)
-        try repository.addRemote("origin", url: URL(string: "https://github.com/bdewey/jubliant-happiness")!)
-        let progressStream = repository.fetchProgress(remote: "origin")
+        let repository = try Repository(create: location, bare: false)
+        try await repository.remoteAdd("origin", url: URL(string: "https://github.com/bdewey/jubliant-happiness")!)
+        let progressStream = await repository.fetchProgress(remote: "origin")
         for try await progress in progressStream {
             print("Fetch progress: \(progress)")
         }
-        let result = try repository.merge(
-            revisionSpecification: "origin/main",
+        let result = try await repository.merge("origin/main",
             signature: Signature(name: "John Q. Tester", email: "tester@me.com")
         )
         #expect(result.isFastForward)
-        let (ahead, behind) = try repository.commitsAheadBehind(other: "origin/main")
+        let (ahead, behind) = try await repository.commitsAheadBehind("origin/main")
         #expect(ahead == 0)
         #expect(behind == 0)
         let expectedFilePath = repository.workingDirectoryURL!.appendingPathComponent("Package.swift").path
@@ -101,20 +97,20 @@ struct RepositoryTests {
         defer {
             try? FileManager.default.removeItem(at: location)
         }
-        let repository = try Repository(createAt: location, bare: false)
-        try repository.addRemote("origin", url: URL(string: "https://github.com/bdewey/jubliant-happiness")!)
+        let repository = try Repository(create: location, bare: false)
+        try await repository.remoteAdd("origin", url: URL(string: "https://github.com/bdewey/jubliant-happiness")!)
         try await repository.fetchProgress(remote: "origin").complete()
-        for try await progress in repository.checkoutProgress(referenceShorthand: "origin/main") {
+        for try await progress in await repository.checkoutProgress(referenceShorthand: "origin/main") {
             print(progress)
         }
-        try repository.checkNormalState()
-        let statusEntries = try repository.statusEntries
+        try await repository.checkNormalState()
+        let statusEntries = try await repository.statusEntries
         #expect(statusEntries.isEmpty)
 
         let expectedFilePath = repository.workingDirectoryURL!.appendingPathComponent("Package.swift").path
         #expect(FileManager.default.fileExists(atPath: expectedFilePath))
 
-        try repository.deleteRemote("origin")
+        try await repository.remoteRemove("origin")
     }
 
     @Test("Fetch Non-Conflicting Changes")
@@ -123,15 +119,15 @@ struct RepositoryTests {
         defer {
             try? FileManager.default.removeItem(at: location)
         }
-        let repository = try Repository(createAt: location, bare: false)
+        let repository = try Repository(create: location, bare: false)
         try "Local file\n".write(
             to: repository.workingDirectoryURL!.appendingPathComponent("local.txt"),
             atomically: true,
             encoding: .utf8
         )
-        try repository.add("local.txt")
+        try await repository.add("local.txt")
         let commitTime = Date()
-        try repository.commit(
+        let _ = try await repository.commitCreate(
             message: "Local commit",
             signature: Signature(name: "John Q. Tester", email: "tester@me.com", time: commitTime)
         )
@@ -140,18 +136,17 @@ struct RepositoryTests {
         //let timeFromRepo = try repository.head!.commit.commitTime
         //#expect(commitTime.timeIntervalSince1970 == timeFromRepo.timeIntervalSince1970)
 
-        try repository.addRemote("origin", url: URL(string: "https://github.com/bdewey/jubliant-happiness")!)
+        try await repository.remoteAdd("origin", url: URL(string: "https://github.com/bdewey/jubliant-happiness")!)
         try await repository.fetchProgress(remote: "origin").complete()
-        var (ahead, behind) = try repository.commitsAheadBehind(other: "origin/main")
+        var (ahead, behind) = try await repository.commitsAheadBehind("origin/main")
         #expect(ahead == 1)
         #expect(behind == 1)
-        let result = try repository.merge(
-            revisionSpecification: "origin/main",
+        let result = try await repository.merge("origin/main",
             signature: Signature(name: "John Q. Tester", email: "tester@me.com")
         )
         #expect(result.isMerge)
-        try repository.checkNormalState()
-        (ahead, behind) = try repository.commitsAheadBehind(other: "origin/main")
+        try await repository.checkNormalState()
+        (ahead, behind) = try await repository.commitsAheadBehind("origin/main")
         #expect(ahead == 2)
         #expect(behind == 0)
         let expectedFilePath = repository.workingDirectoryURL!.appendingPathComponent("Package.swift").path
@@ -162,12 +157,12 @@ struct RepositoryTests {
             atomically: true,
             encoding: .utf8
         )
-        try repository.add("*")
-        try repository.commit(
+        try await repository.add("*")
+        let _ = try await repository.commitCreate(
             message: "Moving ahead of remote",
             signature: Signature(name: "John Q. Tester", email: "tester@me.com")
         )
-        (ahead, behind) = try repository.commitsAheadBehind(other: "origin/main")
+        (ahead, behind) = try await repository.commitsAheadBehind("origin/main")
         #expect(ahead == 3)
         #expect(behind == 0)
     }
@@ -193,7 +188,7 @@ struct RepositoryTests {
         #expect(repository.workingDirectoryURL != nil)
         print("Cloned to \(repository.workingDirectoryURL?.absoluteString ?? "nil")")
         var commitCount = 0
-        for try await commit in repository.log(revspec: "HEAD") {
+        for try await commit in await repository.log(revision: "HEAD") {
             print("\(commit)")
             commitCount += 1
         }
@@ -205,11 +200,10 @@ struct RepositoryTests {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testTreeEnumeration")
         defer { try? FileManager.default.removeItem(at: location) }
         let repository = try await Repository.clone(
-            from: URL(string: "https://github.com/bdewey/SpacedRepetitionScheduler")!,
-            to: location
+            URL(string: "https://github.com/bdewey/SpacedRepetitionScheduler")!, into: location
         )
-        let tree = try repository.headTree
-        for try await qualfiedEntry in repository.treeWalk(tree: tree) {
+        let tree = try await repository.treeHead
+        for try await qualfiedEntry in await repository.treeWalk(tree) {
             print(qualfiedEntry)
         }
     }
@@ -219,14 +213,13 @@ struct RepositoryTests {
         let location = FileManager.default.temporaryDirectory.appendingPathComponent("testGetDataFromEntry")
         defer { try? FileManager.default.removeItem(at: location) }
         let repository = try await Repository.clone(
-            from: URL(string: "https://github.com/bdewey/SpacedRepetitionScheduler")!,
-            to: location
+            URL(string: "https://github.com/bdewey/SpacedRepetitionScheduler")!, into: location
         )
-        let entries = repository.treeWalk()
+        let entries = await repository.treeWalk()
         guard let gitIgnoreEntry = try await entries.first(where: { $0.name == ".gitignore" }) else {
             throw CocoaError(.fileNoSuchFile)
         }
-        let data = try repository.data(for: gitIgnoreEntry.objectID)
+        let data = try await repository.data(gitIgnoreEntry.objectID)
         let string = String(data: data, encoding: .utf8)!
         print(string)
     }
@@ -237,14 +230,14 @@ struct RepositoryTests {
         defer {
             try? FileManager.default.removeItem(at: location)
         }
-        let repository = try Repository(createAt: location, bare: false)
+        let repository = try Repository(create: location, bare: false)
         let testText = "This is some sample text.\n"
         try testText.write(
             to: repository.workingDirectoryURL!.appendingPathComponent("test.txt"),
             atomically: true,
             encoding: .utf8
         )
-        try repository.add()
+        try await repository.add()
         print(repository.workingDirectoryURL!.absoluteString)
     }
 
@@ -255,7 +248,7 @@ struct RepositoryTests {
         defer {
             try? FileManager.default.removeItem(at: location)
         }
-        let repository = try Repository(createAt: location, bare: false)
+        let repository = try Repository(create: location, bare: false)
         print("Working directory: \(repository.workingDirectoryURL!.standardizedFileURL.path)")
         let testText = "This is some sample text.\n"
         try testText.write(
@@ -263,19 +256,19 @@ struct RepositoryTests {
             atomically: true,
             encoding: .utf8
         )
-        try repository.add()
-        let firstCommitOID = try repository.commit(message: "First commit", signature: signature)
-        print("First commit: \(firstCommitOID)")
+        try await repository.add()
+        let firstCommitID = try await repository.commitCreate(message: "First commit", signature: signature)
+        print("First commit: \(firstCommitID)")
         try "Hello, world\n".write(
             to: repository.workingDirectoryURL!.appendingPathComponent("hello.txt"),
             atomically: true,
             encoding: .utf8
         )
-        try repository.add()
-        let secondCommitOID = try repository.commit(message: "Second commit", signature: signature)
-        print("Second commit: \(secondCommitOID)")
+        try await repository.add()
+        let secondCommitID = try await repository.commitCreate(message: "Second commit", signature: signature)
+        print("Second commit: \(secondCommitID)")
 
-        let firstDiff = try repository.diff(nil, try repository.lookupCommit(for: firstCommitOID).tree)
+        let firstDiff = try await repository.diff(nil, try repository.commit(firstCommitID).tree)
         #expect(firstDiff.count == 1)
     }
 
@@ -289,41 +282,40 @@ struct RepositoryTests {
         try? FileManager.default.createDirectory(at: clientURL, withIntermediateDirectories: true)
         let serverURL = location.appendingPathComponent("server")
         try? FileManager.default.createDirectory(at: serverURL, withIntermediateDirectories: true)
-        let clientRepository = try Repository(createAt: clientURL)
-        let serverRepository = try Repository(createAt: serverURL)
-        try clientRepository.addRemote("origin", url: serverURL)
+        let clientRepository = try Repository(create: clientURL)
+        let serverRepository = try Repository(create: serverURL)
+        try await clientRepository.remoteAdd("origin", url: serverURL)
         try await clientRepository.fetchProgress(remote: "origin").complete()
-        let initialTuple = try clientRepository.commitsAheadBehind(other: "origin/main")
+        let initialTuple = try await clientRepository.commitsAheadBehind("origin/main")
         #expect(initialTuple.ahead == 0)
         #expect(initialTuple.behind == 0)
 
         // Commit some stuff to `server` and fetch it
         try "test1\n".write(to: serverURL.appendingPathComponent("test1.txt"), atomically: true, encoding: .utf8)
-        try serverRepository.add()
-        try serverRepository.commit(
+        try await serverRepository.add()
+        let _ = try await serverRepository.commitCreate(
             message: "test1",
             signature: Signature(name: "bkd", email: "noone@foo.com", time: Date())
         )
 
         try "test2\n".write(to: serverURL.appendingPathComponent("test2.txt"), atomically: true, encoding: .utf8)
-        try serverRepository.add()
-        try serverRepository.commit(
+        try await serverRepository.add()
+        let _ = try await serverRepository.commitCreate(
             message: "test2",
             signature: Signature(name: "bkd", email: "noone@foo.com", time: Date())
         )
 
         try await clientRepository.fetchProgress(remote: "origin").complete()
-        let fetchedTuple = try clientRepository.commitsAheadBehind(other: "origin/main")
+        let fetchedTuple = try await clientRepository.commitsAheadBehind("origin/main")
         #expect(fetchedTuple.ahead == 0)
         #expect(fetchedTuple.behind == 2)
 
-        let mergeResult = try clientRepository.merge(
-            revisionSpecification: "origin/main",
+        let mergeResult = try await clientRepository.merge("origin/main",
             signature: Signature(name: "bkd", email: "noone@foo.com", time: Date())
         )
         #expect(mergeResult.isFastForward)
 
-        let nothingOnServer = try clientRepository.commitsAheadBehind(other: "fake")
+        let nothingOnServer = try await clientRepository.commitsAheadBehind("fake")
         #expect(nothingOnServer.ahead == 2)
         #expect(nothingOnServer.behind == 0)
     }
@@ -338,10 +330,16 @@ struct RepositoryTests {
         let token = "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"
 
         let repository = try await Repository.clone(
-            from: URL(string: "https://github.com/nathanborror/swift-git.git")!,
-            to: location,
-            credentials: .plaintext(username: username, password: token)
+            URL(string: "https://github.com/nathanborror/swift-git.git")!, into: location, credentials: .plaintext(username: username, password: token)
         )
         #expect(repository.workingDirectoryURL != nil)
     }
+
+    // git clone ...
+    // git fetch; git merge
+    // git add .; git commit -m "..."
+    // git push
+
+    // git clone --depth=1 ...
+    // git fetch; git merge
 }

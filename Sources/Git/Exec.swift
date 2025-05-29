@@ -18,10 +18,10 @@ func ExecReturn(_ name: String, closure: (inout OpaquePointer?) -> Int32) throws
 }
 
 func ExecReturnID(_ name: String, closure: (inout git_oid) -> Int32) throws -> ObjectID {
-    var oid = git_oid()
-    let result = closure(&oid)
+    var id = git_oid()
+    let result = closure(&id)
     guard result == GIT_OK.rawValue else {
         throw GitError(code: result, apiName: name)
     }
-    return ObjectID(oid)
+    return ObjectID(id)
 }
