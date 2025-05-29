@@ -1,6 +1,6 @@
 # Swift Git
 
-An unofficial Swift client for interacting with Git.
+An unofficial Swift client for interacting with Git. ⚠️ _Caution: Thrashy project, fork if you wanna use._ ⚠️
 
 ## Requirements
 
