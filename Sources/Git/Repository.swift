@@ -806,7 +806,7 @@ public actor Repository {
         }
     }
 
-    public enum MergeResult: Equatable {
+    public enum MergeResult: Equatable, Sendable {
         /// We fast-forwarded the current branch to a new commit.
         case fastForward(ObjectID)
         /// We created a merge commit in the current branch.
