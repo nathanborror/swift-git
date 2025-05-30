@@ -320,26 +320,19 @@ struct RepositoryTests {
         #expect(nothingOnServer.behind == 0)
     }
 
-    @Test("Private Clone")
-    func testPrivateBasicClone() async throws {
-        let location = FileManager.default.temporaryDirectory.appendingPathComponent("testPrivateBasicClone")
-        defer { try? FileManager.default.removeItem(at: location) }
-
-        // Github Personal Access Token (read-only access)
-        let username = "nathanborror"
-        let token = "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"
-
-        let repository = try await Repository.clone(
-            URL(string: "https://github.com/nathanborror/swift-git.git")!, into: location, credentials: .plaintext(username: username, password: token)
-        )
-        #expect(repository.workingDirectoryURL != nil)
-    }
-
-    // git clone ...
-    // git fetch; git merge
-    // git add .; git commit -m "..."
-    // git push
-
-    // git clone --depth=1 ...
-    // git fetch; git merge
+//    @Test("Private Clone")
+//    func testPrivateBasicClone() async throws {
+//        let location = FileManager.default.temporaryDirectory.appendingPathComponent("testPrivateBasicClone")
+//        defer { try? FileManager.default.removeItem(at: location) }
+//
+//        // Github Personal Access Token (read-only access)
+//        let url = URL(string: "https://github.com/nathanborror/swift-git.git")!
+//        let username = "YOUR_USERNAME"
+//        let token = "YOUR_PERSONAL_ACCESS_TOKEN" // Genreate at https://github.com/settings/tokens
+//
+//        let repository = try await Repository.clone(
+//            url, into: location, credentials: .plaintext(username: username, password: token)
+//        )
+//        #expect(repository.workingDirectoryURL != nil)
+//    }
 }
